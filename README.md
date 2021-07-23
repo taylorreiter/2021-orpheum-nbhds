@@ -74,4 +74,13 @@ Note to self: on farm, these data live at `~/github/2020-ibd/sandbox/rgnv_sgc_or
 
 Part of this repo also benchmarks orpheus's performance against megahit assemblies of these neighborhoods.
 The code used to assemble these fastq files is recorded [here](https://github.com/dib-lab/2020-ibd/tree/master/sandbox/test_megahit_diginorm_nocat). 
-Note to self: on farm, these data live at `~/github/2020-ibd/sandbox/test_megahit_diginorm_nocat`).  
+Note to self: on farm, these data live at `~/github/2020-ibd/sandbox/test_megahit_diginorm_nocat`.  
+
+### Getting started
+
+```
+conda env create --name orph --file environment.yml
+conda activate orph
+
+snakemake -j 16 --use-conda --rerun-incomplete --restart-times 1 --latency-wait 15 --resources mem_mb=500000 --default-resources runtime=10080 --cluster "sbatch -t {resources.runtime} -J orph -p bmm -n 1 -N 1 -c {threads} --mem={resources.mem_mb}" -k -n
+```
