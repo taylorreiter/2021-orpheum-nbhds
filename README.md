@@ -1,4 +1,4 @@
-# 20210723 using orpheum on spacegraphcats nbhds to predict open reading frames in reads
+# Using orpheum on spacegraphcats nbhds to predict open reading frames in reads
 
 ### Background and motivation
 
