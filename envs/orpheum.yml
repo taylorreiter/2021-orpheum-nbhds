@@ -5,4 +5,4 @@ channels:
 dependencies:
    - pip
    - pip:
-        git+https://github.com/czbiohub/orpheum.git@master
+       - git+https://github.com/czbiohub/orpheum@master
