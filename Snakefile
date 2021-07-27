@@ -2,10 +2,11 @@ import pandas as pd
 
 m = pd.read_csv("inputs/working_metadata.tsv", sep = "\t", header = 0)
 LIBRARIES = m['library_name'].unique().tolist()
-
+#LIBRARIES = LIBRARIES[0, 52, 101, 256, 309, 400, 489, 555, 586, 602] # run on a subset first
+	
 rule all:
     input:
-        "outputs/orpheum_index/rgnv_original_sgc_nbhds_plass_assembly_protein_ksize7.bloomfilter.nodegraph"
+        expand("outputs/orpheum/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads.faa", library = LIBRARIES) 
 
 
 # mkdir -p outputs/rgnv_sgc_original_results
@@ -41,8 +42,24 @@ rule orpheum_index_plass_assembly:
     conda: "envs/orpheum.yml"
     benchmark: "benchmarks/orpheum_index_plass_assembly.txt"
     resources: mem_mb = 128000
-    threads: 8
+    threads: 1
     shell:'''
     orpheum index --molecule protein --peptide-ksize 7 --save-as {output} {input}
     '''
-        
+
+rule orpheum_translate_sgc_nbhds:        
+    input: 
+        ref="outputs/orpheum_index/rgnv_original_sgc_nbhds_plass_assembly_protein_ksize7.bloomfilter.nodegraph",
+        fastq="outputs/rgnv_sgc_original_results/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads.fa.gz"
+    output:
+        pep="outputs/orpheum/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads.faa", 
+        nuc="outputs/orpheum/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads.nuc_coding.fna",
+        nuc_noncoding="outputs/orpheum/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads.nuc_noncoding.fna",
+        csv="outputs/orpheum/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads.coding_scores.csv"
+    conda: "envs/orpheum.yml"
+    benchmark: "benchmarks/orpheum_translate_{library}_plass_assembly.txt"
+    resources: mem_mb = 16000
+    threads: 1
+    shell:'''
+    orpheum translate --noncoding-nucleotide-fasta {output.nuc_noncoding} --coding-nucleotide-fasta {output.nuc} --csv {output.csv} {input.ref} {input.fastq} > {output.pep}
+    '''
