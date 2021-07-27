@@ -5,7 +5,7 @@ LIBRARIES = m['library_name'].unique().tolist()
 
 rule all:
     input:
-         "outputs/plass/rgnv_original_sgc_nbhds_plass_assembly.faa"
+        "outputs/orpheum_index/rgnv_original_sgc_nbhds_plass_assembly_protein_ksize7.bloomfilter.nodegraph"
 
 
 # mkdir -p outputs/rgnv_sgc_original_results
@@ -29,9 +29,20 @@ rule plass_assemble_sgc_nbhds:
     output: "outputs/plass/rgnv_original_sgc_nbhds_plass_assembly.faa"
     conda: "envs/plass.yml"
     benchmark: "benchmarks/plass_assemble_sgc_nbhds.txt"
-    resources: mem_mb = 128000
+    resources: mem_mb = 512000
     threads: 8
     shell:'''
     plass assemble --min-length 25 {input} {output} tmp 
     '''
-    
+
+rule orpheum_index_plass_assembly:
+    input: "outputs/plass/rgnv_original_sgc_nbhds_plass_assembly.faa"
+    output: "outputs/orpheum_index/rgnv_original_sgc_nbhds_plass_assembly_protein_ksize7.bloomfilter.nodegraph"
+    conda: "envs/orpheum.yml"
+    benchmark: "benchmarks/orpheum_index_plass_assembly.txt"
+    resources: mem_mb = 128000
+    threads: 8
+    shell:'''
+    orpheum index --molecule protein --peptide-ksize 7 --save-as {output} {input}
+    '''
+        

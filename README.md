@@ -82,5 +82,5 @@ Note to self: on farm, these data live at `~/github/2020-ibd/sandbox/test_megahi
 conda env create --name orph --file environment.yml
 conda activate orph
 
-snakemake -j 16 --use-conda --rerun-incomplete --restart-times 1 --latency-wait 15 --resources mem_mb=500000 --default-resources runtime=10080 --cluster "sbatch -t {resources.runtime} -J orph -p bmm -n 1 -N 1 -c {threads} --mem={resources.mem_mb}" -k -n
+snakemake -j 16 --use-conda --rerun-incomplete --latency-wait 15 --resources mem_mb=500000 --cluster "sbatch -t 10080 -J orph -p bmm -n 1 -N 1 -c {threads} --mem={resources.mem_mb}" -k -n
 ```
