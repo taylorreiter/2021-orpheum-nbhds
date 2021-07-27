@@ -55,11 +55,12 @@ rule orpheum_translate_sgc_nbhds:
         pep="outputs/orpheum/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads.faa", 
         nuc="outputs/orpheum/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads.nuc_coding.fna",
         nuc_noncoding="outputs/orpheum/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads.nuc_noncoding.fna",
-        csv="outputs/orpheum/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads.coding_scores.csv"
+        csv="outputs/orpheum/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads.coding_scores.csv",
+        json="outputs/orpheum/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads.summary.json"
     conda: "envs/orpheum.yml"
     benchmark: "benchmarks/orpheum_translate_{library}_plass_assembly.txt"
     resources: mem_mb = 16000
     threads: 1
     shell:'''
-    orpheum translate --noncoding-nucleotide-fasta {output.nuc_noncoding} --coding-nucleotide-fasta {output.nuc} --csv {output.csv} {input.ref} {input.fastq} > {output.pep}
+    orpheum translate --peptides-are-bloom-filter --noncoding-nucleotide-fasta {output.nuc_noncoding} --coding-nucleotide-fasta {output.nuc} --csv {output.csv} --json-summary {output.json} {input.ref} {input.fastq} > {output.pep}
     '''

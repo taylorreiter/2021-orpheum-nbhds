@@ -6,4 +6,5 @@ dependencies:
    - sourmash=3.2.2
    - pip
    - pip:
-       - git+https://github.com/czbiohub/orpheum@master
+   #    - git+https://github.com/czbiohub/orpheum@master
+       - git+https://github.com/czbiohub/orpheum@bluegenes/patch-args
