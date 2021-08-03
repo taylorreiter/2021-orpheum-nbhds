@@ -6,8 +6,8 @@ KSIZES = ['7', '10']
 	
 rule all:
     input:
-        expand("outputs/orpheum/ksize{ksize}/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads.faa", library = LIBRARIES, ksize = KSIZES) 
-
+        #expand("outputs/orpheum/ksize{ksize}/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads.faa", library = LIBRARIES, ksize = KSIZES) 
+        expand("outputs/nuc_noncoding_bwa/ksize{ksize}/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads.nuc_noncoding.bam", library = LIBRARIES, ksize = KSIZES) 
 
 # mkdir -p outputs/rgnv_sgc_original_results
 # cd outputs/rgnv_sgc_original_results
@@ -49,18 +49,60 @@ rule orpheum_index_plass_assembly:
 
 rule orpheum_translate_sgc_nbhds:        
     input: 
-        ref="outputs/orpheum_index/rgnv_original_sgc_nbhds_plass_assembly_protein_ksize7.bloomfilter.nodegraph",
+        ref="outputs/orpheum_index/rgnv_original_sgc_nbhds_plass_assembly_protein_ksize{ksize}.bloomfilter.nodegraph",
         fastq="outputs/rgnv_sgc_original_results/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads.fa.gz"
     output:
         pep="outputs/orpheum/ksize{ksize}/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads.faa", 
         nuc="outputs/orpheum/ksize{ksize}/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads.nuc_coding.fna",
-        nuc_noncoding="outputs/ksize{ksize}/orpheum/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads.nuc_noncoding.fna",
+        nuc_noncoding="outputs/orpheum/ksize{ksize}/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads.nuc_noncoding.fna",
         csv="outputs/orpheum/ksize{ksize}/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads.coding_scores.csv",
-        json="outputs/orpheum/ksize{ksie}/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads.summary.json"
+        json="outputs/orpheum/ksize{ksize}/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads.summary.json"
     conda: "envs/orpheum.yml"
     benchmark: "benchmarks/orpheum_translate_{library}_plass_assembly_ksize{ksize}.txt"
-    resources: mem_mb = 64000
+    resources: mem_mb = 62000
     threads: 1
     shell:'''
-    orpheum translate --peptides-are-bloom-filter --noncoding-nucleotide-fasta {output.nuc_noncoding} --coding-nucleotide-fasta {output.nuc} --csv {output.csv} --json-summary {output.json} {input.ref} {input.fastq} > {output.pep}
+    orpheum translate --peptide-ksize {wildcards.ksize}  --peptides-are-bloom-filter --noncoding-nucleotide-fasta {output.nuc_noncoding} --coding-nucleotide-fasta {output.nuc} --csv {output.csv} --json-summary {output.json} {input.ref} {input.fastq} > {output.pep}
+    '''
+
+#################################
+## Evaluate
+#################################
+
+# map noncoding nucleotide sequences against the coding portions of the genome
+# approximately zero should align if prediction worked well
+# this reference nuc set is separate from the PLASS assembly as was derived from
+# megahit assemblies + isolate genomes in RefSeq
+# Original file lives here:
+# 2020-ibd/sandbox/test_roary/outputs/roary_with_megahit_and_isolates/pan_genome_reference.fa
+
+rule index_ref_nuc_set:
+    input: "inputs/pan_genome_reference.fa"
+    output: "inputs/pan_genome_reference.fa.bwt"
+    conda: "envs/bwa.yml"
+    resources: mem_mb = 2000
+    threads: 1
+    shell:'''
+    bwa index {input}
+    ''' 
+
+rule map_nuc_noncoding_to_ref_nuc_set:        
+    input: 
+        ref_nuc_set= "inputs/pan_genome_reference.fa",
+        ref_nuc_set_bwt= "inputs/pan_genome_reference.fa.bwt",
+        nuc_noncoding="outputs/orpheum/ksize{ksize}/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads.nuc_noncoding.fna",
+    output:"outputs/nuc_noncoding_bwa/ksize{ksize}/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads.nuc_noncoding.bam"
+    conda: "envs/bwa.yml"
+    resources: mem_mb = 2000
+    threads: 1
+    shell:'''
+    bwa mem -t {threads} {input.ref_nuc_set} {input.nuc_noncoding} | samtools sort -o {output} -
+    '''
+
+rule flagstat_map_nuc_noncoding_to_ref_nuc_set:
+    input: "outputs/nuc_noncoding_bwa/ksize{ksize}/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads.nuc_noncoding.bam"
+    output: "outputs/nuc_noncoding_bwa/ksize{ksize}/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads.nuc_noncoding.flagstat"
+    conda: "envs/bwa.yml"
+    shell:'''
+    samtools flagstat {input} > {output} - 
     '''
