@@ -7,7 +7,8 @@ KSIZES = ['7', '10']
 rule all:
     input:
         #expand("outputs/orpheum/ksize{ksize}/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads.faa", library = LIBRARIES, ksize = KSIZES) 
-        expand("outputs/nuc_noncoding_bwa/ksize{ksize}/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads.nuc_noncoding.bam", library = LIBRARIES, ksize = KSIZES) 
+        expand("outputs/nuc_noncoding_bwa/ksize{ksize}/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads.nuc_noncoding.flagstat", library = LIBRARIES, ksize = KSIZES), 
+        expand("outputs/aa_paladin/ksize{ksize}/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads.aa.flagstat", library = LIBRARIES, ksize = KSIZES) 
 
 # mkdir -p outputs/rgnv_sgc_original_results
 # cd outputs/rgnv_sgc_original_results
@@ -103,6 +104,46 @@ rule flagstat_map_nuc_noncoding_to_ref_nuc_set:
     input: "outputs/nuc_noncoding_bwa/ksize{ksize}/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads.nuc_noncoding.bam"
     output: "outputs/nuc_noncoding_bwa/ksize{ksize}/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads.nuc_noncoding.flagstat"
     conda: "envs/bwa.yml"
+    resources: mem_mb = 2000
     shell:'''
-    samtools flagstat {input} > {output} - 
+    samtools flagstat {input} > {output}
+    '''
+
+# map proteins against roary ref set aas, and samtools flagstat for % mapping
+# % mapping should be high, close to 100%. If low, either PLASS is too
+# promiscuous, or orpheum did a bad job and gave a bunch of false postive
+# protein sequences
+# original prot seqs live here:
+# 2020-ibd/sandbox/test_roary/outputs/roary_with_megahit_and_isolates/pan_genome_reference.faa
+rule paladin_index:
+    input: "inputs/pan_genome_reference.faa",
+    output:"inputs/pan_genome_reference.faa.bwt",
+    conda: "envs/paladin.yml"
+    resources: mem_mb = 8000
+    threads: 1
+    shell:'''
+    paladin index -r3 {input}
+    '''
+
+rule paladin_align:
+    input: 
+        ref="inputs/pan_genome_reference.faa",
+        idx="inputs/pan_genome_reference.faa",
+        pep="outputs/orpheum/ksize{ksize}/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads.faa", 
+    output: "outputs/aa_paladin/ksize{ksize}/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads.aa.sam"
+    conda: "envs/paladin.yml"
+    resources: mem_mb = 2000
+    threads: 1
+    shell:'''
+    paladin align -t 1 -p {input.ref} {input.pep} > {output}
+    '''
+
+rule samtools_flagstat_paladin:
+    input: "outputs/aa_paladin/ksize{ksize}/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads.aa.sam"
+    output: "outputs/aa_paladin/ksize{ksize}/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads.aa.flagstat"
+    conda: "envs/paladin.yml"
+    resources: mem_mb = 2000
+    threads: 1
+    shell:'''
+    samtools flagstat {input} > {output}
     '''
