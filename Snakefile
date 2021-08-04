@@ -117,7 +117,7 @@ rule flagstat_map_nuc_noncoding_to_ref_nuc_set:
 # 2020-ibd/sandbox/test_roary/outputs/roary_with_megahit_and_isolates/pan_genome_reference.faa
 rule paladin_index:
     input: "inputs/pan_genome_reference.faa",
-    output:"inputs/pan_genome_reference.faa.bwt",
+    output:"inputs/pan_genome_reference.faa.pro",
     conda: "envs/paladin.yml"
     resources: mem_mb = 8000
     threads: 1
@@ -128,7 +128,7 @@ rule paladin_index:
 rule paladin_align:
     input: 
         ref="inputs/pan_genome_reference.faa",
-        idx="inputs/pan_genome_reference.faa",
+        idx="inputs/pan_genome_reference.faa.pro",
         pep="outputs/orpheum/ksize{ksize}/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads.faa", 
     output: "outputs/aa_paladin/ksize{ksize}/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads.aa.sam"
     conda: "envs/paladin.yml"
