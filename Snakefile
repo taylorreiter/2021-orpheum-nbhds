@@ -3,12 +3,13 @@ import pandas as pd
 m = pd.read_csv("inputs/working_metadata.tsv", sep = "\t", header = 0)
 LIBRARIES = m['library_name'].unique().tolist()
 KSIZES = ['7', '10']
+ORPHEUM_DB = ['plass_assembly', "roary_with_megahit_and_isolates"]
 	
 rule all:
     input:
         #expand("outputs/orpheum/ksize{ksize}/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads.faa", library = LIBRARIES, ksize = KSIZES) 
-        expand("outputs/nuc_noncoding_bwa/ksize{ksize}/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads.nuc_noncoding.flagstat", library = LIBRARIES, ksize = KSIZES), 
-        expand("outputs/aa_paladin/ksize{ksize}/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads.aa.flagstat", library = LIBRARIES, ksize = KSIZES) 
+        expand("outputs/nuc_noncoding_bwa/{orpheum_db}/ksize{ksize}/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads.nuc_noncoding.flagstat", orpheum_db = ORPHEUM_DB, library = LIBRARIES, ksize = KSIZES), 
+        expand("outputs/aa_paladin/{orpheum_db}/ksize{ksize}/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads.aa.flagstat", orpheum_db = ORPHEUM_DB, library = LIBRARIES, ksize = KSIZES) 
 
 # mkdir -p outputs/rgnv_sgc_original_results
 # cd outputs/rgnv_sgc_original_results
@@ -48,19 +49,30 @@ rule orpheum_index_plass_assembly:
     orpheum index --molecule protein --peptide-ksize {wildcards.ksize} --save-as {output} {input}
     '''
 
+rule orpheum_index_roary_with_megahit_and_isolates:
+    input: "inputs/pan_genome_reference.faa"
+    output: "outputs/orpheum_index/rgnv_original_sgc_nbhds_roary_with_megahit_and_isolates_protein_ksize{ksize}.bloomfilter.nodegraph"
+    conda: "envs/orpheum.yml"
+    benchmark: "benchmarks/orpheum_index_pan_genome_reference_ksize{ksize}.txt"
+    resources: mem_mb = 128000
+    threads: 1
+    shell:'''
+    orpheum index --molecule protein --peptide-ksize {wildcards.ksize} --save-as {output} {input}
+    '''
+
 rule orpheum_translate_sgc_nbhds:        
     input: 
-        ref="outputs/orpheum_index/rgnv_original_sgc_nbhds_plass_assembly_protein_ksize{ksize}.bloomfilter.nodegraph",
+        ref="outputs/orpheum_index/rgnv_original_sgc_nbhds_{orpheum_db}_protein_ksize{ksize}.bloomfilter.nodegraph",
         fastq="outputs/rgnv_sgc_original_results/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads.fa.gz"
     output:
-        pep="outputs/orpheum/ksize{ksize}/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads.faa", 
-        nuc="outputs/orpheum/ksize{ksize}/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads.nuc_coding.fna",
-        nuc_noncoding="outputs/orpheum/ksize{ksize}/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads.nuc_noncoding.fna",
-        csv="outputs/orpheum/ksize{ksize}/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads.coding_scores.csv",
-        json="outputs/orpheum/ksize{ksize}/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads.summary.json"
+        pep="outputs/orpheum/{orpheum_db}/ksize{ksize}/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads.faa", 
+        nuc="outputs/orpheum/{orpheum_db}/ksize{ksize}/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads.nuc_coding.fna",
+        nuc_noncoding="outputs/orpheum/{orpheum_db}/ksize{ksize}/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads.nuc_noncoding.fna",
+        csv="outputs/orpheum/{orpheum_db}/ksize{ksize}/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads.coding_scores.csv",
+        json="outputs/orpheum/{orpheum_db}/ksize{ksize}/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads.summary.json"
     conda: "envs/orpheum.yml"
-    benchmark: "benchmarks/orpheum_translate_{library}_plass_assembly_ksize{ksize}.txt"
-    resources: mem_mb = 62000
+    benchmark: "benchmarks/orpheum_translate_{library}_{orpheum_db}_ksize{ksize}.txt"
+    resources: mem_mb = 8000
     threads: 1
     shell:'''
     orpheum translate --peptide-ksize {wildcards.ksize}  --peptides-are-bloom-filter --noncoding-nucleotide-fasta {output.nuc_noncoding} --coding-nucleotide-fasta {output.nuc} --csv {output.csv} --json-summary {output.json} {input.ref} {input.fastq} > {output.pep}
@@ -91,8 +103,8 @@ rule map_nuc_noncoding_to_ref_nuc_set:
     input: 
         ref_nuc_set= "inputs/pan_genome_reference.fa",
         ref_nuc_set_bwt= "inputs/pan_genome_reference.fa.bwt",
-        nuc_noncoding="outputs/orpheum/ksize{ksize}/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads.nuc_noncoding.fna",
-    output:"outputs/nuc_noncoding_bwa/ksize{ksize}/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads.nuc_noncoding.bam"
+        nuc_noncoding="outputs/orpheum/{orpheum_db}/ksize{ksize}/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads.nuc_noncoding.fna",
+    output:"outputs/nuc_noncoding_bwa/{orpheum_db}/ksize{ksize}/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads.nuc_noncoding.bam"
     conda: "envs/bwa.yml"
     resources: mem_mb = 2000
     threads: 1
@@ -101,8 +113,8 @@ rule map_nuc_noncoding_to_ref_nuc_set:
     '''
 
 rule flagstat_map_nuc_noncoding_to_ref_nuc_set:
-    input: "outputs/nuc_noncoding_bwa/ksize{ksize}/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads.nuc_noncoding.bam"
-    output: "outputs/nuc_noncoding_bwa/ksize{ksize}/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads.nuc_noncoding.flagstat"
+    input: "outputs/nuc_noncoding_bwa/{orpheum_db}/ksize{ksize}/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads.nuc_noncoding.bam"
+    output: "outputs/nuc_noncoding_bwa/{orpheum_db}/ksize{ksize}/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads.nuc_noncoding.flagstat"
     conda: "envs/bwa.yml"
     resources: mem_mb = 2000
     shell:'''
@@ -129,8 +141,8 @@ rule paladin_align:
     input: 
         ref="inputs/pan_genome_reference.faa",
         idx="inputs/pan_genome_reference.faa.pro",
-        pep="outputs/orpheum/ksize{ksize}/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads.faa", 
-    output: "outputs/aa_paladin/ksize{ksize}/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads.aa.sam"
+        pep="outputs/orpheum/{orpheum_db}/ksize{ksize}/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads.faa", 
+    output: "outputs/aa_paladin/{orpheum_db}/ksize{ksize}/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads.aa.sam"
     conda: "envs/paladin.yml"
     resources: mem_mb = 2000
     threads: 1
@@ -139,8 +151,8 @@ rule paladin_align:
     '''
 
 rule samtools_flagstat_paladin:
-    input: "outputs/aa_paladin/ksize{ksize}/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads.aa.sam"
-    output: "outputs/aa_paladin/ksize{ksize}/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads.aa.flagstat"
+    input: "outputs/aa_paladin/{orpheum_db}/ksize{ksize}/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads.aa.sam"
+    output: "outputs/aa_paladin/{orpheum_db}/ksize{ksize}/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads.aa.flagstat"
     conda: "envs/paladin.yml"
     resources: mem_mb = 2000
     threads: 1
