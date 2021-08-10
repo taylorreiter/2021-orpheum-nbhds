@@ -8,8 +8,9 @@ ORPHEUM_DB = ['plass_assembly', "roary_with_megahit_and_isolates"]
 rule all:
     input:
         #expand("outputs/orpheum/ksize{ksize}/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads.faa", library = LIBRARIES, ksize = KSIZES) 
-        expand("outputs/nuc_noncoding_bwa/{orpheum_db}/ksize{ksize}/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads.nuc_noncoding.flagstat", orpheum_db = ORPHEUM_DB, library = LIBRARIES, ksize = KSIZES), 
-        expand("outputs/aa_paladin/{orpheum_db}/ksize{ksize}/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads.aa.flagstat", orpheum_db = ORPHEUM_DB, library = LIBRARIES, ksize = KSIZES) 
+        "outputs/rgnv_sgc_original_paladin/multiqc_report.html",
+        expand("outputs/aa_paladin/{orpheum_db}/ksize{ksize}/multiqc_report.html", orpheum_db = ORPHEUM_DB, ksize = KSIZES),
+        expand("outputs/nuc_noncoding_bwa/{orpheum_db}/ksize{ksize}/multiqc_report.html", orpheum_db = ORPHEUM_DB, ksize = KSIZES)
 
 # mkdir -p outputs/rgnv_sgc_original_results
 # cd outputs/rgnv_sgc_original_results
@@ -49,12 +50,22 @@ rule orpheum_index_plass_assembly:
     orpheum index --molecule protein --peptide-ksize {wildcards.ksize} --save-as {output} {input}
     '''
 
-rule orpheum_index_roary_with_megahit_and_isolates:
+rule remove_stop_codons:
     input: "inputs/pan_genome_reference.faa"
+    output: "inputs/pan_genome_reference.faa.nostop.fa"
+    conda: "envs/orpheum.yml"
+    threads: 1
+    resources: mem_mb = 2000
+    shell:'''
+    python scripts/remove-stop-plass.py {input}
+    '''
+
+rule orpheum_index_roary_with_megahit_and_isolates:
+    input: "inputs/pan_genome_reference.faa.nostop.fa"
     output: "outputs/orpheum_index/rgnv_original_sgc_nbhds_roary_with_megahit_and_isolates_protein_ksize{ksize}.bloomfilter.nodegraph"
     conda: "envs/orpheum.yml"
     benchmark: "benchmarks/orpheum_index_pan_genome_reference_ksize{ksize}.txt"
-    resources: mem_mb = 128000
+    resources: mem_mb = 32000
     threads: 1
     shell:'''
     orpheum index --molecule protein --peptide-ksize {wildcards.ksize} --save-as {output} {input}
@@ -121,6 +132,16 @@ rule flagstat_map_nuc_noncoding_to_ref_nuc_set:
     samtools flagstat {input} > {output}
     '''
 
+rule multiqc_flagstat_map_nuc_noncoding_to_ref_nuc_set:
+    input: expand("outputs/nuc_noncoding_bwa/{{orpheum_db}}/ksize{{ksize}}/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads.aa.flagstat", library = LIBRARIES), 
+    output: "outputs/nuc_noncoding_bwa/{orpheum_db}/ksize{ksize}/multiqc_report.html"
+    params: 
+        iodir = lambda wildcards: "outputs/nuc_noncoding_bwa/" + wildcards.orpheum_db + "/ksize" + wildcards.ksize,
+    conda: "envs/multiqc.yml"
+    shell:'''
+    multiqc {params.iodir} -o {params.iodir} 
+    '''
+
 # map proteins against roary ref set aas, and samtools flagstat for % mapping
 # % mapping should be high, close to 100%. If low, either PLASS is too
 # promiscuous, or orpheum did a bad job and gave a bunch of false postive
@@ -159,3 +180,56 @@ rule samtools_flagstat_paladin:
     shell:'''
     samtools flagstat {input} > {output}
     '''
+
+rule multiqc_samtools_flagstat_paladin:
+    input: expand("outputs/aa_paladin/{{orpheum_db}}/ksize{{ksize}}/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads.aa.flagstat", library = LIBRARIES), 
+    output: "outputs/aa_paladin/{orpheum_db}/ksize{ksize}/multiqc_report.html"
+    params: 
+        iodir = lambda wildcards: "outputs/aa_paladin/" + wildcards.orpheum_db + "/ksize" + wildcards.ksize,
+    conda: "envs/multiqc.yml"
+    shell:'''
+    multiqc {params.iodir} -o {params.iodir} 
+    '''
+
+#########################################
+## Controls
+#########################################
+
+# Average all reads map against AA reference pangenome:
+#    This number estimates the lower limit of reads that should be protein coding; 
+#    at least this many reads should be predicted by orpheum
+
+rule paladin_og_fastq_seqs:
+    input: 
+        ref="inputs/pan_genome_reference.faa",
+        idx="inputs/pan_genome_reference.faa.pro",
+        fastq="outputs/rgnv_sgc_original_results/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads.fa.gz"
+    output: "outputs/rgnv_sgc_original_paladin/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads.fa.sam"
+    conda: "envs/paladin.yml"
+    resources: mem_mb = 2000
+    threads: 1
+    shell:'''
+    paladin align -t 1 {input.ref} {input.fastq} > {output}
+    '''
+
+rule flagstat_paladin_og_fastq_seqs:
+    input: "outputs/rgnv_sgc_original_paladin/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads.fa.sam"
+    output: "outputs/rgnv_sgc_original_paladin/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads.fa.flagstat"
+    conda: "envs/paladin.yml"
+    resources: mem_mb = 2000
+    threads: 1
+    shell:'''
+    samtools flagstat {input} > {output}
+    '''
+
+rule multiqc_flagstat_paladin_og_fastq_seqs:
+    input: expand("outputs/rgnv_sgc_original_paladin/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads.fa.flagstat", library = LIBRARIES)
+    output: "outputs/rgnv_sgc_original_paladin/multiqc_report.html"
+    params: 
+        indir = "outputs/rgnv_sgc_original_paladin",
+        outdir = "outputs/rgnv_sgc_original_paladin"
+    conda: "envs/multiqc.yml"
+    shell:'''
+    multiqc {params.indir} -o {params.outdir} 
+    '''
+
