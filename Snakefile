@@ -133,11 +133,13 @@ rule flagstat_map_nuc_noncoding_to_ref_nuc_set:
     '''
 
 rule multiqc_flagstat_map_nuc_noncoding_to_ref_nuc_set:
-    input: expand("outputs/nuc_noncoding_bwa/{{orpheum_db}}/ksize{{ksize}}/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads.aa.flagstat", library = LIBRARIES), 
+    input: expand("outputs/nuc_noncoding_bwa/{{orpheum_db}}/ksize{{ksize}}/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads.nuc_noncoding.flagstat", library = LIBRARIES), 
     output: "outputs/nuc_noncoding_bwa/{orpheum_db}/ksize{ksize}/multiqc_report.html"
     params: 
         iodir = lambda wildcards: "outputs/nuc_noncoding_bwa/" + wildcards.orpheum_db + "/ksize" + wildcards.ksize,
     conda: "envs/multiqc.yml"
+    resources: mem_mb = 8000
+    threads: 1
     shell:'''
     multiqc {params.iodir} -o {params.iodir} 
     '''
@@ -184,9 +186,13 @@ rule samtools_flagstat_paladin:
 rule multiqc_samtools_flagstat_paladin:
     input: expand("outputs/aa_paladin/{{orpheum_db}}/ksize{{ksize}}/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads.aa.flagstat", library = LIBRARIES), 
     output: "outputs/aa_paladin/{orpheum_db}/ksize{ksize}/multiqc_report.html"
+    resources: mem_mb = 8000
+    threads: 1
     params: 
         iodir = lambda wildcards: "outputs/aa_paladin/" + wildcards.orpheum_db + "/ksize" + wildcards.ksize,
     conda: "envs/multiqc.yml"
+    resources: mem_mb = 8000
+    threads: 1
     shell:'''
     multiqc {params.iodir} -o {params.iodir} 
     '''
@@ -229,6 +235,8 @@ rule multiqc_flagstat_paladin_og_fastq_seqs:
         indir = "outputs/rgnv_sgc_original_paladin",
         outdir = "outputs/rgnv_sgc_original_paladin"
     conda: "envs/multiqc.yml"
+    resources: mem_mb = 8000
+    threads: 1
     shell:'''
     multiqc {params.indir} -o {params.outdir} 
     '''
