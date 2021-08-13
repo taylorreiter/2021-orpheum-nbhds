@@ -83,7 +83,7 @@ rule orpheum_translate_sgc_nbhds:
         json="outputs/orpheum/{orpheum_db}/ksize{ksize}/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads.summary.json"
     conda: "envs/orpheum.yml"
     benchmark: "benchmarks/orpheum_translate_{library}_{orpheum_db}_ksize{ksize}.txt"
-    resources: mem_mb = 8000
+    resources: mem_mb = 62000
     threads: 1
     shell:'''
     orpheum translate --peptide-ksize {wildcards.ksize}  --peptides-are-bloom-filter --noncoding-nucleotide-fasta {output.nuc_noncoding} --coding-nucleotide-fasta {output.nuc} --csv {output.csv} --json-summary {output.json} {input.ref} {input.fastq} > {output.pep}
