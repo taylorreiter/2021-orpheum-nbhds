@@ -110,11 +110,68 @@ rule index_ref_nuc_set:
     bwa index {input}
     ''' 
 
+rule cut_nuc_noncoding_read_names:
+    input: "outputs/orpheum/{orpheum_db}/ksize{ksize}/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads.nuc_noncoding.fna",
+    output: "outputs/orpheum/{orpheum_db}/ksize{ksize}/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads.nuc_noncoding.cut.fna",
+    resources: mem_mb = 2000
+    threads: 1
+    shell:'''
+    sed '/^>/ s/__.*//g' {input} > {output}
+    '''
+
+rule dedup_nuc_noncoding_read_names:
+    input: "outputs/orpheum/{orpheum_db}/ksize{ksize}/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads.nuc_noncoding.cut.fna",
+    output:  "outputs/orpheum/{orpheum_db}/ksize{ksize}/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads.nuc_noncoding.cut.dedup.fna",
+    resources: mem_mb = 8000
+    threads: 1
+    shell:'''
+    awk '/^>/{{f=!d[$1];d[$1]=1}}f' {input} > {output}
+    '''
+
+rule grab_coding_read_names:
+    input: "outputs/orpheum/{orpheum_db}/ksize{ksize}/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads.faa", 
+    output: "outputs/orpheum/{orpheum_db}/ksize{ksize}/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads_aa_names.txt",  
+    resources: mem_mb = 2000
+    threads: 1
+    shell:'''
+    grep ">" {input} > {output}
+    '''
+
+rule cut_coding_read_names:
+    input: "outputs/orpheum/{orpheum_db}/ksize{ksize}/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads_aa_names.txt",  
+    output: "outputs/orpheum/{orpheum_db}/ksize{ksize}/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads_aa_names.cut.txt",  
+    resources: mem_mb = 2000
+    threads: 1
+    shell:'''
+    sed '/^>/ s/__.*//g' {input} > {output}
+    '''
+
+rule dedup_coding_read_names:
+    input: "outputs/orpheum/{orpheum_db}/ksize{ksize}/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads_aa_names.cut.txt",
+    output: "outputs/orpheum/{orpheum_db}/ksize{ksize}/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads_aa_names.cut.dedup.txt",  
+    resources: mem_mb = 8000
+    threads: 1
+    shell:'''
+    awk '/^>/{{f=!d[$1];d[$1]=1}}f' {input} > {output}
+    '''
+
+rule isolate_noncoding_only_reads:
+    input: 
+        pep = "outputs/orpheum/{orpheum_db}/ksize{ksize}/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads_aa_names.cut.dedup.txt",  
+        noncoding = "outputs/orpheum/{orpheum_db}/ksize{ksize}/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads.nuc_noncoding.cut.dedup.fna" 
+    output: "outputs/orpheum/{orpheum_db}/ksize{ksize}/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads.nuc_noncoding.cut.dedup.only.fna",
+    conda: "envs/bioawk.yml"
+    resources: mem_mb = 8000
+    threads: 1
+    shell:'''
+    bioawk -cfastx '{{printf(">%s\t%s\n", $name, $seq)}}' {input.noncoding} |   grep -v -f {input.pep} | tr "\t" "\n" > {output}
+    '''
+
 rule map_nuc_noncoding_to_ref_nuc_set:        
     input: 
         ref_nuc_set= "inputs/pan_genome_reference.fa",
         ref_nuc_set_bwt= "inputs/pan_genome_reference.fa.bwt",
-        nuc_noncoding="outputs/orpheum/{orpheum_db}/ksize{ksize}/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads.nuc_noncoding.fna",
+        nuc_noncoding="outputs/orpheum/{orpheum_db}/ksize{ksize}/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads.nuc_noncoding.cut.dedup.only.fna",
     output:"outputs/nuc_noncoding_bwa/{orpheum_db}/ksize{ksize}/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads.nuc_noncoding.bam"
     conda: "envs/bwa.yml"
     resources: mem_mb = 2000
