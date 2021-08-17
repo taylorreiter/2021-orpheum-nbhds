@@ -160,12 +160,12 @@ rule isolate_noncoding_only_reads:
         pep = "outputs/orpheum/{orpheum_db}/ksize{ksize}/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads_aa_names.cut.dedup.txt",  
         noncoding = "outputs/orpheum/{orpheum_db}/ksize{ksize}/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads.nuc_noncoding.cut.dedup.fna" 
     output: "outputs/orpheum/{orpheum_db}/ksize{ksize}/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads.nuc_noncoding.cut.dedup.only.fna",
-    conda: "envs/bioawk.yml"
+    #conda: "envs/bioawk.yml"
     resources: mem_mb = 8000
     threads: 1
-    shell:'''
-    bioawk -cfastx '{{printf(">%s\t%s\n", $name, $seq)}}' {input.noncoding} |   grep -v -f {input.pep} | tr "\t" "\n" > {output}
-    '''
+    shell:"""
+    cat {input.noncoding} | paste - - | grep -v -F -f {input.pep} | tr "\t" "\n" > {output}
+    """
 
 rule map_nuc_noncoding_to_ref_nuc_set:        
     input: 
