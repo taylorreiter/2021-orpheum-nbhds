@@ -1,0 +1,5 @@
+alphabet_info:
+  protein:
+    ksizes: [7,10]
+  dayhoff:
+    ksizes: [15,17]
