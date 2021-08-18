@@ -87,10 +87,9 @@ rule orpheum_index_roary_with_megahit_and_isolates:
     resources: mem_mb = 32000
     threads: 1
     shell:'''
-    orpheum index --molecule {wildcards.alphabet} --peptide-ksize {wildcards.ksize} --save-as {output} {input}
+    orpheum index --alphabet {wildcards.alphabet} --peptide-ksize {wildcards.ksize} --save-as {output} {input}
     '''
 
-# TO DO ADD ENCODING AS SHELL COMMAND PARAMETER
 rule orpheum_translate_sgc_nbhds:        
     input: 
         ref="outputs/orpheum_index/rgnv_original_sgc_nbhds_{orpheum_db}_{alphabet}_ksize{ksize}.bloomfilter.nodegraph",
@@ -106,7 +105,7 @@ rule orpheum_translate_sgc_nbhds:
     resources: mem_mb = 62000
     threads: 1
     shell:'''
-    orpheum translate --peptide-ksize {wildcards.ksize}  --peptides-are-bloom-filter --noncoding-nucleotide-fasta {output.nuc_noncoding} --coding-nucleotide-fasta {output.nuc} --csv {output.csv} --json-summary {output.json} {input.ref} {input.fastq} > {output.pep}
+    orpheum translate --alphabet {wildcards.alphabet} --peptide-ksize {wildcards.ksize}  --peptides-are-bloom-filter --noncoding-nucleotide-fasta {output.nuc_noncoding} --coding-nucleotide-fasta {output.nuc} --csv {output.csv} --json-summary {output.json} {input.ref} {input.fastq} > {output.pep}
     '''
 
 #################################
