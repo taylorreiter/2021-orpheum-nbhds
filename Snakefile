@@ -10,7 +10,10 @@ rule all:
         #expand("outputs/orpheum/ksize{ksize}/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads.faa", library = LIBRARIES, ksize = KSIZES) 
         "outputs/rgnv_sgc_original_paladin/multiqc_report.html",
         expand("outputs/aa_paladin/{orpheum_db}/ksize{ksize}/multiqc_report.html", orpheum_db = ORPHEUM_DB, ksize = KSIZES),
-        expand("outputs/nuc_noncoding_bwa/{orpheum_db}/ksize{ksize}/multiqc_report.html", orpheum_db = ORPHEUM_DB, ksize = KSIZES)
+        expand("outputs/nuc_noncoding_bwa/{orpheum_db}/ksize{ksize}/multiqc_report.html", orpheum_db = ORPHEUM_DB, ksize = KSIZES),
+        expand("outputs/nuc_noncoding_bwa/{orpheum_db}/ksize{ksize}/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads.nuc_noncoding.stat", orpheum_db = ORPHEUM_DB, ksize = KSIZES, library = LIBRARIES),
+        expand("outputs/nuc_coding_bwa/{orpheum_db}/ksize{ksize}/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads.nuc_coding.stat", orpheum_db = ORPHEUM_DB, ksize = KSIZES, library = LIBRARIES),
+
 
 # mkdir -p outputs/rgnv_sgc_original_results
 # cd outputs/rgnv_sgc_original_results
@@ -110,49 +113,22 @@ rule index_ref_nuc_set:
     bwa index {input}
     ''' 
 
-rule cut_nuc_noncoding_read_names:
+rule cut_dedup_nuc_noncoding_read_names:
     input: "outputs/orpheum/{orpheum_db}/ksize{ksize}/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads.nuc_noncoding.fna",
-    output: "outputs/orpheum/{orpheum_db}/ksize{ksize}/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads.nuc_noncoding.cut.fna",
-    resources: mem_mb = 2000
-    threads: 1
-    shell:'''
-    sed '/^>/ s/__.*//g' {input} > {output}
-    '''
-
-rule dedup_nuc_noncoding_read_names:
-    input: "outputs/orpheum/{orpheum_db}/ksize{ksize}/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads.nuc_noncoding.cut.fna",
     output:  "outputs/orpheum/{orpheum_db}/ksize{ksize}/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads.nuc_noncoding.cut.dedup.fna",
     resources: mem_mb = 8000
     threads: 1
     shell:'''
-    awk '/^>/{{f=!d[$1];d[$1]=1}}f' {input} > {output}
+    sed '/^>/ s/__.*//g' {input} | awk '/^>/{{f=!d[$1];d[$1]=1}}f' > {output}
     '''
 
-rule grab_coding_read_names:
+rule grab_cut_dedup_coding_read_names:
     input: "outputs/orpheum/{orpheum_db}/ksize{ksize}/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads.faa", 
-    output: "outputs/orpheum/{orpheum_db}/ksize{ksize}/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads_aa_names.txt",  
-    resources: mem_mb = 2000
-    threads: 1
-    shell:'''
-    grep ">" {input} > {output}
-    '''
-
-rule cut_coding_read_names:
-    input: "outputs/orpheum/{orpheum_db}/ksize{ksize}/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads_aa_names.txt",  
-    output: "outputs/orpheum/{orpheum_db}/ksize{ksize}/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads_aa_names.cut.txt",  
-    resources: mem_mb = 2000
-    threads: 1
-    shell:'''
-    sed '/^>/ s/__.*//g' {input} > {output}
-    '''
-
-rule dedup_coding_read_names:
-    input: "outputs/orpheum/{orpheum_db}/ksize{ksize}/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads_aa_names.cut.txt",
     output: "outputs/orpheum/{orpheum_db}/ksize{ksize}/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads_aa_names.cut.dedup.txt",  
     resources: mem_mb = 8000
     threads: 1
     shell:'''
-    awk '/^>/{{f=!d[$1];d[$1]=1}}f' {input} > {output}
+    grep ">" {input} | sed '/^>/ s/__.*//g' | awk '/^>/{{f=!d[$1];d[$1]=1}}f' > {output}
     '''
 
 rule isolate_noncoding_only_reads:
@@ -199,6 +175,15 @@ rule multiqc_flagstat_map_nuc_noncoding_to_ref_nuc_set:
     threads: 1
     shell:'''
     multiqc {params.iodir} -o {params.iodir} 
+    '''
+
+rule stat_map_nuc_noncoding_to_ref_nuc_set:
+    input: "outputs/nuc_noncoding_bwa/{orpheum_db}/ksize{ksize}/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads.nuc_noncoding.bam"
+    output: "outputs/nuc_noncoding_bwa/{orpheum_db}/ksize{ksize}/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads.nuc_noncoding.stat"
+    conda: "envs/bwa.yml"
+    resources: mem_mb = 2000
+    shell:'''
+    samtools view -h {input} | samtools stats | grep '^SN' | cut -f 2- > {output}
     '''
 
 # map proteins against roary ref set aas, and samtools flagstat for % mapping
@@ -252,6 +237,65 @@ rule multiqc_samtools_flagstat_paladin:
     threads: 1
     shell:'''
     multiqc {params.iodir} -o {params.iodir} 
+    '''
+
+# map (deduplicated) nucleotide coding sequences back to nucleotide reference
+# This number allows us to see how many more reads we discover as protein coding 
+# using orpheum than we would discover from mapping against reference. 
+# Ideally, it will be (much) lower than average AA map against AA reference 
+# pangenome be predicted by orpheum. 
+
+
+rule cut_dedup_nuc_coding_read_names:
+    input: "outputs/orpheum/{orpheum_db}/ksize{ksize}/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads.nuc_coding.fna",
+    output:  "outputs/orpheum/{orpheum_db}/ksize{ksize}/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads.nuc_coding.cut.dedup.fna",
+    resources: mem_mb = 8000
+    threads: 1
+    shell:'''
+    sed '/^>/ s/__.*//g' {input} | awk '/^>/{{f=!d[$1];d[$1]=1}}f' > {output}
+    '''
+
+rule map_nuc_coding_to_ref_nuc_set:        
+    input: 
+        ref_nuc_set= "inputs/pan_genome_reference.fa",
+        ref_nuc_set_bwt= "inputs/pan_genome_reference.fa.bwt",
+        nuc_noncoding="outputs/orpheum/{orpheum_db}/ksize{ksize}/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads.nuc_coding.cut.dedup.fna",
+    output:"outputs/nuc_coding_bwa/{orpheum_db}/ksize{ksize}/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads.nuc_coding.bam"
+    conda: "envs/bwa.yml"
+    resources: mem_mb = 2000
+    threads: 1
+    shell:'''
+    bwa mem -t {threads} {input.ref_nuc_set} {input.nuc_noncoding} | samtools sort -o {output} -
+    '''
+
+rule flagstat_map_nuc_coding_to_ref_nuc_set:
+    input: "outputs/nuc_coding_bwa/{orpheum_db}/ksize{ksize}/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads.nuc_coding.bam"
+    output: "outputs/nuc_coding_bwa/{orpheum_db}/ksize{ksize}/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads.nuc_coding.flagstat"
+    conda: "envs/bwa.yml"
+    resources: mem_mb = 2000
+    shell:'''
+    samtools flagstat {input} > {output}
+    '''
+
+rule multiqc_flagstat_map_nuc_coding_to_ref_nuc_set:
+    input: expand("outputs/nuc_coding_bwa/{{orpheum_db}}/ksize{{ksize}}/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads.nuc_coding.flagstat", library = LIBRARIES), 
+    output: "outputs/nuc_coding_bwa/{orpheum_db}/ksize{ksize}/multiqc_report.html"
+    params: 
+        iodir = lambda wildcards: "outputs/nuc_coding_bwa/" + wildcards.orpheum_db + "/ksize" + wildcards.ksize,
+    conda: "envs/multiqc.yml"
+    resources: mem_mb = 8000
+    threads: 1
+    shell:'''
+    multiqc {params.iodir} -o {params.iodir} 
+    '''
+
+rule stat_map_nuc_coding_to_ref_nuc_set:
+    input: "outputs/nuc_coding_bwa/{orpheum_db}/ksize{ksize}/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads.nuc_coding.bam"
+    output: "outputs/nuc_coding_bwa/{orpheum_db}/ksize{ksize}/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads.nuc_coding.stat"
+    conda: "envs/bwa.yml"
+    resources: mem_mb = 2000
+    shell:'''
+    samtools view -h {input} | samtools stats | grep '^SN' | cut -f 2- > {output}
     '''
 
 #########################################
