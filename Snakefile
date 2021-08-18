@@ -26,7 +26,7 @@ rule all:
         "outputs/rgnv_sgc_original_paladin/multiqc_report.html",
         expand("outputs/aa_paladin/{orpheum_db}/{alpha_ksize}/multiqc_report.html", orpheum_db = ORPHEUM_DB, alpha_ksize = ALPHA_KSIZE),
         expand("outputs/nuc_noncoding_bwa/{orpheum_db}/{alpha_ksize}/multiqc_report.html", orpheum_db = ORPHEUM_DB, alpha_ksize = ALPHA_KSIZE),
-        expand("outputs/nuc_noncoding_bwa/{orpheum_db}/{alpha_ksize}/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads.nuc_noncoding.stat", alpha_ksize=ALPHA_KSIZE, orpheum_db = ORPHEUM_DB, library = LIBRARIES)
+        expand("outputs/nuc_noncoding_bwa/{orpheum_db}/{alpha_ksize}/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads.nuc_noncoding.stat", alpha_ksize=ALPHA_KSIZE, orpheum_db = ORPHEUM_DB, library = LIBRARIES),
         expand("outputs/nuc_noncoding_bwa/{orpheum_db}/{alpha_ksize}/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads.nuc_noncoding.stat", orpheum_db = ORPHEUM_DB, alpha_ksize = ALPHA_KSIZE, library = LIBRARIES),
         expand("outputs/nuc_coding_bwa/{orpheum_db}/{alpha_ksize}/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads.nuc_coding.stat", orpheum_db = ORPHEUM_DB, alpha_ksize = ALPHA_KSIZE, library = LIBRARIES),
 
