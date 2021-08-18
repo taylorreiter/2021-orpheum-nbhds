@@ -1,46 +1,34 @@
 import pandas as pd
-from itertools import product
 
 # define samples (libraries) and orpheum databases
 m = pd.read_csv("inputs/working_metadata.tsv", sep = "\t", header = 0)
 LIBRARIES = m['library_name'].unique().tolist()
-KSIZES = ['7', '10', '15', '17']
 ORPHEUM_DB = ['plass_assembly', "roary_with_megahit_and_isolates"]
-ALPHABET = ['protein', 'dayhoff']
+#ALPHABET = ['protein', 'dayhoff']
+#KSIZES = ['7', '10', '15', '17']
 
-# constrain wildcard combinations to forbid nonsensical combinations:
-# protein_ksize15, protein_ksize17, dayhoff_ksize7, dayhoff_ksize10
-# https://stackoverflow.com/questions/41185567/how-to-use-expand-in-snakemake-when-some-particular-combinations-of-wildcards-ar/41185568
-def filter_combinator(combinator, blacklist):
-    def filtered_combinator(*args, **kwargs):
-        for wc_comb in combinator(*args, **kwargs):
-            # Use frozenset instead of tuple
-            # in order to accomodate
-            # unpredictable wildcard order
-            if frozenset(wc_comb) not in blacklist:
-                yield wc_comb
-    return filtered_combinator
+# set constrained k sizes
+dayhoff_ksizes = [15,17]
+protein_ksizes = [7,10]
+# Snakemake will use the ALPHA_KSIZE wildcard from rule all to generate output file names
+# Then, snakemake will back propagate the strings from the final file names to solve for
+# the wildcards "alphabet" and "ksize" throughout the rest of the workflow. 
+# The underscore for the chrs in the list ALPHA_KSIZE separates the alphabet string from 
+# the ksize string, allowing snakemake to solve {alphabet}_{ksize} wildcard strings. 
+# Therefore, the chrs in the ALPHA_KSIZE list also set the alphabet names as "dayhoff" and "protein".
+ALPHA_KSIZE = expand('protein_ksize{k}', k=protein_ksizes)
+ALPHA_KSIZE += expand('dayhoff_ksize{k}', k=dayhoff_ksizes)
 
-forbidden = {
-    frozenset({("alphabet", "protein"), ("ksize", 15)}),
-    frozenset({("alphabet", "protein"), ("ksize", 17)}),
-    frozenset({("alphabet", "dayhoff"), ("ksize", 7)}),
-    frozenset({("alphabet", "dayhoff"), ("ksize", 10)})}
 
-filtered_product = filter_combinator(product, forbidden)
-
-print(filtered_product)
 
 rule all:
     input:
-        # Override default combination generator with filtered_product
         "outputs/rgnv_sgc_original_paladin/multiqc_report.html",
-        #expand("outputs/aa_paladin/{orpheum_db}/{alphabet}_ksize{ksize}/multiqc_report.html", filtered_product, orpheum_db = ORPHEUM_DB, alphabet = ALPHABET, ksize = KSIZES),
-        #expand("outputs/nuc_noncoding_bwa/{orpheum_db}/{alphabet}_ksize{ksize}/multiqc_report.html", filtered_product, orpheum_db = ORPHEUM_DB, alphabet = ALPHABET, ksize = KSIZES),
-        lambda wildcards: expand("outputs/nuc_noncoding_bwa/{orpheum_db}/{alphabet}_ksize{ksize}/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads.nuc_noncoding.stat", 
-            filtered_product, 
-            alphabet = ALPHABET, ksize = KSIZE, orpheum_db = ORPHEUM_DB, library = LIBRARIES),
-        #expand("outputs/nuc_coding_bwa/{orpheum_db}/{alphabet}_ksize{ksize}/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads.nuc_coding.stat", filtered_product, orpheum_db = ORPHEUM_DB, alphabet = ALPHABET, ksize = KSIZES, library = LIBRARIES),
+        expand("outputs/aa_paladin/{orpheum_db}/{alpha_ksize}/multiqc_report.html", orpheum_db = ORPHEUM_DB, alpha_ksize = ALPHA_KSIZE),
+        expand("outputs/nuc_noncoding_bwa/{orpheum_db}/{alpha_ksize}/multiqc_report.html", orpheum_db = ORPHEUM_DB, alpha_ksize = ALPHA_KSIZE),
+        expand("outputs/nuc_noncoding_bwa/{orpheum_db}/{alpha_ksize}/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads.nuc_noncoding.stat", alpha_ksize=ALPHA_KSIZE, orpheum_db = ORPHEUM_DB, library = LIBRARIES)
+        expand("outputs/nuc_noncoding_bwa/{orpheum_db}/{alpha_ksize}/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads.nuc_noncoding.stat", orpheum_db = ORPHEUM_DB, alpha_ksize = ALPHA_KSIZE, library = LIBRARIES),
+        expand("outputs/nuc_coding_bwa/{orpheum_db}/{alpha_ksize}/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads.nuc_coding.stat", orpheum_db = ORPHEUM_DB, alpha_ksize = ALPHA_KSIZE, library = LIBRARIES),
 
 
 # mkdir -p outputs/rgnv_sgc_original_results
