@@ -185,7 +185,7 @@ rule multiqc_flagstat_map_nuc_noncoding_to_ref_nuc_set:
     input: expand("outputs/nuc_noncoding_bwa/{{orpheum_db}}/{{alphabet}}_ksize{{ksize}}/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads.nuc_noncoding.flagstat", library = LIBRARIES), 
     output: "outputs/nuc_noncoding_bwa/{orpheum_db}/{alphabet}_ksize{ksize}/multiqc_report.html"
     params: 
-        iodir = lambda wildcards: "outputs/nuc_noncoding_bwa/" + wildcards.orpheum_db + "/{alphabet}_ksize" + wildcards.ksize,
+        iodir = lambda wildcards: "outputs/nuc_noncoding_bwa/" + wildcards.orpheum_db + "/" + wildcards.alphabet + "_ksize" + wildcards.ksize,
     conda: "envs/multiqc.yml"
     resources: mem_mb = 8000
     threads: 1
@@ -247,7 +247,7 @@ rule multiqc_samtools_flagstat_paladin:
     resources: mem_mb = 8000
     threads: 1
     params: 
-        iodir = lambda wildcards: "outputs/aa_paladin/" + wildcards.orpheum_db + "/{alphabet}_ksize" + wildcards.ksize,
+        iodir = lambda wildcards: "outputs/aa_paladin/" + wildcards.orpheum_db + "/" + wildcards.alphabet + "_ksize" + wildcards.ksize,
     conda: "envs/multiqc.yml"
     resources: mem_mb = 8000
     threads: 1
@@ -297,7 +297,7 @@ rule multiqc_flagstat_map_nuc_coding_to_ref_nuc_set:
     input: expand("outputs/nuc_coding_bwa/{{orpheum_db}}/{{alphabet}}_ksize{{ksize}}/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads.nuc_coding.flagstat", library = LIBRARIES), 
     output: "outputs/nuc_coding_bwa/{orpheum_db}/{alphabet}_ksize{ksize}/multiqc_report.html"
     params: 
-        iodir = lambda wildcards: "outputs/nuc_coding_bwa/" + wildcards.orpheum_db + "/{alphabet}_ksize" + wildcards.ksize,
+        iodir = lambda wildcards: "outputs/nuc_coding_bwa/" + wildcards.orpheum_db + "/" + wilcards.alphabet + "_ksize" + wildcards.ksize,
     conda: "envs/multiqc.yml"
     resources: mem_mb = 8000
     threads: 1
