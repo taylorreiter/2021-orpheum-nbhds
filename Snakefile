@@ -3,13 +3,14 @@ import pandas as pd
 # define samples (libraries) and orpheum databases
 m = pd.read_csv("inputs/working_metadata.tsv", sep = "\t", header = 0)
 LIBRARIES = m['library_name'].unique().tolist()
-ORPHEUM_DB = ['plass_assembly', "roary_with_megahit_and_isolates"]
+#ORPHEUM_DB = ['plass_assembly', "roary_with_megahit_and_isolates"]
+ORPHEUM_DB = ["roary_with_megahit_and_isolates"]
 #ALPHABET = ['protein', 'dayhoff']
 #KSIZES = ['7', '10', '15', '17']
 
 # set constrained k sizes
-dayhoff_ksizes = [15,17]
-protein_ksizes = [7,10]
+dayhoff_ksizes = [11, 13, 15, 17]
+protein_ksizes = [6, 7, 10]
 # Snakemake will use the ALPHA_KSIZE wildcard from rule all to generate output file names
 # Then, snakemake will back propagate the strings from the final file names to solve for
 # the wildcards "alphabet" and "ksize" throughout the rest of the workflow. 
