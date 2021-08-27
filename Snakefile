@@ -4,13 +4,13 @@ import pandas as pd
 m = pd.read_csv("inputs/working_metadata.tsv", sep = "\t", header = 0)
 LIBRARIES = m['library_name'].unique().tolist()
 #ORPHEUM_DB = ['plass_assembly', "roary_with_megahit_and_isolates"]
-ORPHEUM_DB = ["roary_with_megahit_and_isolates"]
+ORPHEUM_DB = ["roary_with_megahit_and_isolates", "ruminococcusB"]
 #ALPHABET = ['protein', 'dayhoff']
 #KSIZES = ['7', '10', '15', '17']
 
 # set constrained k sizes
-dayhoff_ksizes = [11, 13, 15, 17]
-protein_ksizes = [6, 7, 10]
+#dayhoff_ksizes = [11, 13, 15, 17]
+protein_ksizes = [6, 7]
 # Snakemake will use the ALPHA_KSIZE wildcard from rule all to generate output file names
 # Then, snakemake will back propagate the strings from the final file names to solve for
 # the wildcards "alphabet" and "ksize" throughout the rest of the workflow. 
@@ -18,7 +18,7 @@ protein_ksizes = [6, 7, 10]
 # the ksize string, allowing snakemake to solve {alphabet}_{ksize} wildcard strings. 
 # Therefore, the chrs in the ALPHA_KSIZE list also set the alphabet names as "dayhoff" and "protein".
 ALPHA_KSIZE = expand('protein_ksize{k}', k=protein_ksizes)
-ALPHA_KSIZE += expand('dayhoff_ksize{k}', k=dayhoff_ksizes)
+#ALPHA_KSIZE += expand('dayhoff_ksize{k}', k=dayhoff_ksizes)
 
 
 
@@ -61,7 +61,7 @@ rule plass_assemble_sgc_nbhds:
 
 rule orpheum_index_plass_assembly:
     input: "outputs/plass/rgnv_original_sgc_nbhds_plass_assembly.faa"
-    output: "outputs/orpheum_index/rgnv_original_sgc_nbhds_plass_assembly_{alphabet}_ksize{ksize}.bloomfilter.nodegraph"
+    output: "outputs/orpheum_index/plass_assembly_{alphabet}_ksize{ksize}.bloomfilter.nodegraph"
     conda: "envs/orpheum.yml"
     benchmark: "benchmarks/orpheum_index_plass_assembly_{alphabet}_ksize{ksize}.txt"
     resources: mem_mb = 128000
@@ -82,7 +82,7 @@ rule remove_stop_codons:
 
 rule orpheum_index_roary_with_megahit_and_isolates:
     input: "inputs/pan_genome_reference.faa.nostop.fa"
-    output: "outputs/orpheum_index/rgnv_original_sgc_nbhds_roary_with_megahit_and_isolates_{alphabet}_ksize{ksize}.bloomfilter.nodegraph"
+    output: "outputs/orpheum_index/roary_with_megahit_and_isolates_{alphabet}_ksize{ksize}.bloomfilter.nodegraph"
     conda: "envs/orpheum.yml"
     benchmark: "benchmarks/orpheum_index_pan_genome_reference_{alphabet}_ksize{ksize}.txt"
     resources: mem_mb = 32000
@@ -91,9 +91,10 @@ rule orpheum_index_roary_with_megahit_and_isolates:
     orpheum index --alphabet {wildcards.alphabet} --peptide-ksize {wildcards.ksize} --save-as {output} {input}
     '''
 
+# GTDB nodegraphs cp'd from tessa's dir, see readme in index folder
 rule orpheum_translate_sgc_nbhds:        
     input: 
-        ref="outputs/orpheum_index/rgnv_original_sgc_nbhds_{orpheum_db}_{alphabet}_ksize{ksize}.bloomfilter.nodegraph",
+        ref="outputs/orpheum_index/{orpheum_db}_{alphabet}_ksize{ksize}.bloomfilter.nodegraph",
         fastq="outputs/rgnv_sgc_original_results/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads.fa.gz"
     output:
         pep="outputs/orpheum/{orpheum_db}/{alphabet}_ksize{ksize}/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads.faa", 
@@ -103,7 +104,7 @@ rule orpheum_translate_sgc_nbhds:
         json="outputs/orpheum/{orpheum_db}/{alphabet}_ksize{ksize}/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads.summary.json"
     conda: "envs/orpheum.yml"
     benchmark: "benchmarks/orpheum_translate_{library}_{orpheum_db}_{alphabet}_ksize{ksize}.txt"
-    resources: mem_mb = 62000
+    resources: mem_mb = 16000
     threads: 1
     shell:'''
     orpheum translate --alphabet {wildcards.alphabet} --peptide-ksize {wildcards.ksize}  --peptides-are-bloom-filter --noncoding-nucleotide-fasta {output.nuc_noncoding} --coding-nucleotide-fasta {output.nuc} --csv {output.csv} --json-summary {output.json} {input.ref} {input.fastq} > {output.pep}
