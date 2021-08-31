@@ -4,7 +4,7 @@ import pandas as pd
 m = pd.read_csv("inputs/working_metadata.tsv", sep = "\t", header = 0)
 LIBRARIES = m['library_name'].unique().tolist()
 #ORPHEUM_DB = ['plass_assembly', "roary_with_megahit_and_isolates"]
-ORPHEUM_DB = ["roary_with_megahit_and_isolates", "ruminococcusB"]
+ORPHEUM_DB = ["roary_with_megahit_and_isolates", "ruminococcusB", "f__Lachnospiraceae"]
 #ALPHABET = ['protein', 'dayhoff']
 #KSIZES = ['7', '10', '15', '17']
 
@@ -19,8 +19,6 @@ protein_ksizes = [6, 7]
 # Therefore, the chrs in the ALPHA_KSIZE list also set the alphabet names as "dayhoff" and "protein".
 ALPHA_KSIZE = expand('protein_ksize{k}', k=protein_ksizes)
 #ALPHA_KSIZE += expand('dayhoff_ksize{k}', k=dayhoff_ksizes)
-
-
 
 rule all:
     input:
