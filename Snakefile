@@ -4,13 +4,13 @@ import pandas as pd
 m = pd.read_csv("inputs/working_metadata.tsv", sep = "\t", header = 0)
 LIBRARIES = m['library_name'].unique().tolist()
 #ORPHEUM_DB = ['plass_assembly', "roary_with_megahit_and_isolates"]
-ORPHEUM_DB = ["roary_with_megahit_and_isolates", "ruminococcusB", "f__Lachnospiraceae"]
+ORPHEUM_DB = ["roary_with_megahit_and_isolates", "ruminococcusB", "f__Lachnospiraceae", "p__Firmicutes_A"]
 #ALPHABET = ['protein', 'dayhoff']
 #KSIZES = ['7', '10', '15', '17']
 
 # set constrained k sizes
 #dayhoff_ksizes = [11, 13, 15, 17]
-protein_ksizes = [6, 7]
+protein_ksizes = [7, 10]
 # Snakemake will use the ALPHA_KSIZE wildcard from rule all to generate output file names
 # Then, snakemake will back propagate the strings from the final file names to solve for
 # the wildcards "alphabet" and "ksize" throughout the rest of the workflow. 
@@ -102,7 +102,7 @@ rule orpheum_translate_sgc_nbhds:
         json="outputs/orpheum/{orpheum_db}/{alphabet}_ksize{ksize}/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads.summary.json"
     conda: "envs/orpheum.yml"
     benchmark: "benchmarks/orpheum_translate_{library}_{orpheum_db}_{alphabet}_ksize{ksize}.txt"
-    resources: mem_mb = 16000
+    resources: mem_mb = 64000
     threads: 1
     shell:'''
     orpheum translate --alphabet {wildcards.alphabet} --peptide-ksize {wildcards.ksize}  --peptides-are-bloom-filter --noncoding-nucleotide-fasta {output.nuc_noncoding} --coding-nucleotide-fasta {output.nuc} --csv {output.csv} --json-summary {output.json} {input.ref} {input.fastq} > {output.pep}
@@ -164,7 +164,7 @@ rule map_nuc_noncoding_to_ref_nuc_set:
         ref_nuc_set= "inputs/pan_genome_reference.fa",
         ref_nuc_set_bwt= "inputs/pan_genome_reference.fa.bwt",
         nuc_noncoding="outputs/orpheum/{orpheum_db}/{alphabet}_ksize{ksize}/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads.nuc_noncoding.cut.dedup.only.fna",
-    output:"outputs/nuc_noncoding_bwa/{orpheum_db}/{alphabet}_ksize{ksize}/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads.nuc_noncoding.bam"
+    output: temp("outputs/nuc_noncoding_bwa/{orpheum_db}/{alphabet}_ksize{ksize}/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads.nuc_noncoding.bam")
     conda: "envs/bwa.yml"
     resources: mem_mb = 2000
     threads: 1
@@ -223,7 +223,7 @@ rule paladin_align:
         ref="inputs/pan_genome_reference.faa",
         idx="inputs/pan_genome_reference.faa.pro",
         pep="outputs/orpheum/{orpheum_db}/{alphabet}_ksize{ksize}/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads.faa", 
-    output: "outputs/aa_paladin/{orpheum_db}/{alphabet}_ksize{ksize}/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads.aa.sam"
+    output: temp("outputs/aa_paladin/{orpheum_db}/{alphabet}_ksize{ksize}/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads.aa.sam")
     conda: "envs/paladin.yml"
     resources: mem_mb = 2000
     threads: 1
@@ -276,7 +276,7 @@ rule map_nuc_coding_to_ref_nuc_set:
         ref_nuc_set= "inputs/pan_genome_reference.fa",
         ref_nuc_set_bwt= "inputs/pan_genome_reference.fa.bwt",
         nuc_noncoding="outputs/orpheum/{orpheum_db}/{alphabet}_ksize{ksize}/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads.nuc_coding.cut.dedup.fna",
-    output:"outputs/nuc_coding_bwa/{orpheum_db}/{alphabet}_ksize{ksize}/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads.nuc_coding.bam"
+    output:temp("outputs/nuc_coding_bwa/{orpheum_db}/{alphabet}_ksize{ksize}/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads.nuc_coding.bam")
     conda: "envs/bwa.yml"
     resources: mem_mb = 2000
     threads: 1
