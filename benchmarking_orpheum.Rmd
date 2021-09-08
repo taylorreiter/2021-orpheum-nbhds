@@ -1,0 +1,849 @@
+---
+title: "Assessing orpheum's efficacy for ORF prediction from prokaryotic metagenomes"
+output: 
+  pdf_document:
+    fig_caption: yes
+    includes:  
+      in_header: knit.tex
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = F, message = F, include = T, eval = T, warning = F,
+                      cache = T)
+options(scipen=999)
+```
+
+```{r libraries}
+library(dplyr)
+library(readr)
+library(tibble)
+library(tidyr)
+library(ggplot2)
+library(ggpmisc)
+library(ggpubr)
+library(broom)
+library(kableExtra)
+library(rjson)
+library(purrr)
+library(janitor)
+```
+
+```{r ggplot_base}
+ggplot_base <- theme_minimal() +
+  theme(plot.title = element_text(size = 9),
+        axis.text = element_text(size = 7),
+        axis.title = element_text(size = 8))
+  #theme(plot.title.position = "plot")
+```
+
+```{r function_read_and_format_orpheum_json}
+read_and_format_orpheum_json <- function(sys_glob_path, database, alphabet, ksize) {
+  file_prefix = paste0("outputs\\/orpheum\\/", database, "\\/", alphabet, "_ksize", ksize, "\\/")
+  json_df <- Sys.glob(sys_glob_path) %>%
+    set_names() %>%
+    map_dfr(~RJSONIO::fromJSON(content =., nullValue = NaN)$categorization_counts, .id = "sample") %>%
+    clean_names() %>%
+    mutate(sample = gsub(file_prefix, "", sample)) %>%
+    mutate(sample = gsub("_GCF_900036035\\.1_RGNV35913_genomic\\.fna\\.gz\\.cdbg_ids\\.reads\\.summary\\.json", "", sample)) %>%
+    mutate(database = database) %>%
+    mutate(ksize = paste0("k=", ksize)) %>%
+    mutate(alphabet = alphabet) %>%
+    mutate(nbhd_reads = rowSums(across(where(is.numeric))))
+     
+  return(json_df)
+}
+```
+
+```{r function_plot_flagstat}
+plot_flagstat_aa <- function(flagstat_path, nbhd_reads, ksize, alphabet, database){
+  orph_aa_vs_aa_ref <- read_tsv(flagstat_path) %>%
+    mutate(sample = gsub("_GCF_900036035.1_RGNV35913_genomic.fna", "", Sample)) %>%
+    left_join(nbhd_reads) %>%
+    mutate(original_pct = (total_passed/nbhd_reads)*100)
+  
+  mean_original_pct <- orph_aa_vs_aa_ref %>% 
+    pull(original_pct) %>% 
+    mean() %>%
+    signif(3)
+  
+  original <- ggplot(orph_aa_vs_aa_ref, aes(x = original_pct)) +
+    geom_density() +
+    ggplot_base +
+    labs(title = paste0("db = ", database, ", alphabet = ", alphabet, ", k = ", ksize), 
+         x = "% original reads mapped to AA ref") +
+    geom_vline(aes(xintercept = mean(original_pct)), col='grey', linetype = "dashed") +
+    geom_text(aes(label=paste0("mean = ", mean_original_pct), 
+                  x=mean_original_pct/2, y = Inf), size = 4, vjust = 1)
+  
+  mean_mapped_passed_pct <- orph_aa_vs_aa_ref %>% 
+    pull(mapped_passed_pct) %>% 
+    mean() %>%
+    signif(3)
+  
+  total <- ggplot(orph_aa_vs_aa_ref, aes(x = mapped_passed_pct)) +
+    geom_density() +
+    ggplot_base +
+    labs(title = paste0("db = ", database, ", alphabet = ", alphabet, ", k = ", ksize), 
+         x = "% predicted reads mapped to AA ref") +
+    geom_vline(aes(xintercept = mean(mapped_passed_pct)), col='grey', linetype = "dashed") +
+    #geom_text(aes(x=mean_mapped_passed_pct/2, label=paste0("Mean\n", mean_mapped_passed_pct), y=.06))
+    geom_text(aes(label=paste0("mean = ", mean_mapped_passed_pct), 
+                  x=mean_mapped_passed_pct/2, y = Inf), size = 4, vjust = 1)
+
+  return(ggarrange(original, total))
+}
+
+plot_flagstat_nnc <- function(flagstat_path, ksize, alphabet, database){
+  orph_nnc_vs_aa_ref <- read_tsv(flagstat_path) %>%
+    replace_na(list(mapped_passed_pct = 0))
+  
+  mean_mapped_passed_pct <- orph_nnc_vs_aa_ref %>% 
+    pull(mapped_passed_pct) %>% 
+    mean() %>%
+    signif(3)
+  
+  plt <- ggplot(orph_nnc_vs_aa_ref, aes(x = mapped_passed_pct)) +
+    geom_density() +
+    ggplot_base +
+    labs(title = paste0("db = ", database, ", alphabet = ", alphabet, ", k = ", ksize), 
+         x = "% nucleotide noncoding reads mapped to nuc ref") +
+    geom_vline(aes(xintercept = mean(mapped_passed_pct)), col='grey', linetype = "dashed") +
+    geom_text(aes(label=paste0("mean = ", mean_mapped_passed_pct), 
+                  x=mean_mapped_passed_pct/2, y = Inf), size = 4, vjust = 1)
+
+  return(plt)
+}
+
+plot_flagstat_nc <- function(flagstat_path, ksize, alphabet, database){
+  orph_nc_vs_aa_ref <- read_tsv(flagstat_path) %>%
+    replace_na(list(mapped_passed_pct = 0))
+  
+  mean_mapped_passed_pct <- orph_nc_vs_aa_ref %>% 
+    pull(mapped_passed_pct) %>% 
+    mean() %>%
+    signif(3)
+  
+  plt <- ggplot(orph_nc_vs_aa_ref, aes(x = mapped_passed_pct)) +
+    geom_density() +
+    ggplot_base +
+    labs(title = paste0("db = ", database, ", alphabet = ", alphabet, ", k = ", ksize), 
+         x = "% nucleotide coding reads mapped to nuc ref") +
+    geom_vline(aes(xintercept = mean(mapped_passed_pct)), col='grey', linetype = "dashed") +
+    geom_text(aes(label=paste0("mean = ", mean_mapped_passed_pct), 
+                  x=mean_mapped_passed_pct/2, y = Inf), size = 4, vjust = 1)
+  
+  return(plt)
+}
+```
+
+```{r function_plot_stat}
+plot_stat_nnc <- function(sys_glob_stat, ksize, alphabet, database){
+  file_prefix <- strsplit(sys_glob_stat, split = "\\*")[[1]][1]
+  orph_nnc_vs_aa_ref_stat <- Sys.glob(sys_glob_stat) %>%
+    set_names() %>%
+    map_dfr(read_tsv, col_names = c("stat", "value", "comment"), .id = "sample") %>%
+    mutate(sample = gsub(file_prefix, "", sample)) %>%
+    mutate(sample = gsub("_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads.nuc_noncoding.stat", "", sample)) %>%
+    mutate(stat = gsub(":", "", stat)) 
+  
+  stat_names_df <- data.frame(old_names = unique(orph_nnc_vs_aa_ref_stat$stat), 
+                              new_names = unique(orph_nnc_vs_aa_ref_stat$stat))
+  stat_names_df$new_names <- make_clean_names(stat_names_df$new_names)
+  
+  orph_nnc_vs_aa_ref_stat <- orph_nnc_vs_aa_ref_stat %>%
+    left_join(stat_names_df, by = c("stat" = "old_names")) %>%
+    select(-stat, stat = new_names)
+  
+  mean_error_rate <- orph_nnc_vs_aa_ref_stat %>% 
+    filter(stat == "error_rate") %>%
+    pull(value) %>% 
+    mean() %>%
+    signif(2)
+  
+  ggplot(orph_nnc_vs_aa_ref_stat %>% filter(stat == "error_rate"), aes(x = value)) +
+    geom_density() +
+    labs(title = paste0("db = ", database, ", alphabet = ", alphabet, ", k = ", ksize),  
+         x = "mapping error rate") +
+    ggplot_base +
+    geom_vline(aes(xintercept = mean(value)), col='grey', linetype = "dashed") +
+    #geom_text(aes(x= mean_error_rate/2, label=paste0("Mean\n", mean_error_rate), y=50))
+    geom_text(aes(label=paste0("mean = ", mean_error_rate), y=Inf, x= mean_error_rate/2), size = 4, vjust = 1)
+
+}
+```
+
+## Background
+
++ The average bacterial genome is 5 Mbp and encodes 5000 proteins ([Land et al. 2015](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC4361730/)). As of January 2014:
+    + The largest bacterial genome in GenBank was *Sorangium cellulosum* strain So0157-2, with 14,782,125 bp encoding 11,599 genes
+    + The smallest bacterial genome in GenBank was *Candidatus Nasuia deltocephalinicola* strain NAS-ALF with 112,091 bp encoding 137 genes.
++ It is estimated that 88% (40-97%) of the bacterial genome is protein coding ([Land et al. 2015](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC4361730/)).
++ It is not currently known how many alternate/overlapping ORFs exist in a bacterial genome.
+    + Computational estimates suggest there are 10-400 alternate ORFs per genome ([Ardern et al. 2020](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC7457138/)).
+    + Experimental evidence suggest ~100 alternate overlapping ORFs per genome ([Zehentner et al. 2020](https://www.biorxiv.org/content/10.1101/2020.11.18.388249v1.full.pdf))
++ Using 76 isolates in RefSeq, on average 89.2% of the *R. gnavus* genome is coding. While we don't know if CDSs will follow the same percentages in metagenome assembly graph query neighborhoods, this is a good approximate estimate to aim for for recovery of coding sequences.
+
+## Data description
+
+The 605 gut microbiome metagenomes analyzed in this repository were originally analysed in the [2020-ibd](https://github.com/dib-lab/2020-ibd) repository as a meta-cohort of IBD subtypes (CD, UC, and nonIBD).
+Assembly graph neighborhoods for the query genome *R. gnavus* were extracted with spacegraphcats.
+
+## Summary tables
+
+
+```{r read_and_format_orpheum_json}
+orph_plass_k7 <- read_and_format_orpheum_json(sys_glob_path = "outputs/orpheum/plass_assembly/protein_ksize7/*json",
+                                              database = "plass_assembly",
+                                              alphabet = "protein",
+                                              ksize = 7)
+
+orph_plass_k10 <- read_and_format_orpheum_json(sys_glob_path = "outputs/orpheum/plass_assembly/protein_ksize10/*json",
+                                               database = "plass_assembly",
+                                               alphabet = "protein",
+                                               ksize = 10)
+
+orph_plass_k15 <- read_and_format_orpheum_json(sys_glob_path = "outputs/orpheum/plass_assembly/dayhoff_ksize15/*json",
+                                              database = "plass_assembly",
+                                              alphabet = "dayhoff",
+                                              ksize = 15)
+
+orph_plass_k17 <- read_and_format_orpheum_json(sys_glob_path = "outputs/orpheum/plass_assembly/dayhoff_ksize17/*json",
+                                               database = "plass_assembly",
+                                               alphabet = "dayhoff",
+                                               ksize = 17)
+
+orph_roary_k6 <- read_and_format_orpheum_json(sys_glob_path = "outputs/orpheum/roary_with_megahit_and_isolates/protein_ksize6/*json",
+                                              database = "roary",
+                                              alphabet = "protein",
+                                              ksize = 6)
+
+orph_roary_k7 <- read_and_format_orpheum_json(sys_glob_path = "outputs/orpheum/roary_with_megahit_and_isolates/protein_ksize7/*json",
+                                              database = "roary",
+                                              alphabet = "protein",
+                                              ksize = 7)
+
+orph_roary_k10 <- read_and_format_orpheum_json(sys_glob_path = "outputs/orpheum/roary_with_megahit_and_isolates/protein_ksize10/*json",
+                                               database = "roary",
+                                               alphabet = "protein",
+                                               ksize = 10)
+
+orph_roary_k11 <- read_and_format_orpheum_json(sys_glob_path = "outputs/orpheum/roary_with_megahit_and_isolates/dayhoff_ksize11/*json",
+                                               database = "roary",
+                                               alphabet = "dayhoff",
+                                               ksize = 11)
+
+orph_roary_k13 <- read_and_format_orpheum_json(sys_glob_path = "outputs/orpheum/roary_with_megahit_and_isolates/dayhoff_ksize13/*json",
+                                               database = "roary",
+                                               alphabet = "dayhoff",
+                                               ksize = 13)
+
+orph_roary_k15 <- read_and_format_orpheum_json(sys_glob_path = "outputs/orpheum/roary_with_megahit_and_isolates/dayhoff_ksize15/*json",
+                                               database = "roary",
+                                               alphabet = "dayhoff",
+                                               ksize = 15)
+
+orph_roary_k17 <- read_and_format_orpheum_json(sys_glob_path = "outputs/orpheum/roary_with_megahit_and_isolates/dayhoff_ksize17/*json",
+                                               database = "roary",
+                                               alphabet = "dayhoff",
+                                               ksize = 17)
+
+orph_ruminococcusB_k6 <- read_and_format_orpheum_json(sys_glob_path = "outputs/orpheum/ruminococcusB/protein_ksize6/*json",
+                                              database = "ruminococcusB",
+                                              alphabet = "protein",
+                                              ksize = 6)
+
+orph_ruminococcusB_k7 <- read_and_format_orpheum_json(sys_glob_path = "outputs/orpheum/ruminococcusB/protein_ksize7/*json",
+                                              database = "ruminococcusB",
+                                              alphabet = "protein",
+                                              ksize = 7)
+
+orph_ruminococcusB_k10 <- read_and_format_orpheum_json(sys_glob_path = "outputs/orpheum/ruminococcusB/protein_ksize10/*json",
+                                              database = "ruminococcusB",
+                                              alphabet = "protein",
+                                              ksize = 10)
+
+orph_f__Lachnospiraceae_k6 <- read_and_format_orpheum_json(sys_glob_path = "outputs/orpheum/f__Lachnospiraceae/protein_ksize6/*json",
+                                              database = "f__Lachnospiraceae",
+                                              alphabet = "protein",
+                                              ksize = 6)
+
+orph_f__Lachnospiraceae_k7 <- read_and_format_orpheum_json(sys_glob_path = "outputs/orpheum/f__Lachnospiraceae/protein_ksize7/*json",
+                                              database = "f__Lachnospiraceae",
+                                              alphabet = "protein",
+                                              ksize = 7)
+
+orph_f__Lachnospiraceae_k10 <- read_and_format_orpheum_json(sys_glob_path = "outputs/orpheum/f__Lachnospiraceae/protein_ksize10/*json",
+                                              database = "f__Lachnospiraceae",
+                                              alphabet = "protein",
+                                              ksize = 10)
+
+orph_p__Firmicutes_A_k7 <- read_and_format_orpheum_json(sys_glob_path = "outputs/orpheum/p__Firmicutes_A/protein_ksize7/*json",
+                                              database = "p__Firmicutes_A",
+                                              alphabet = "protein",
+                                              ksize = 7)
+
+orph_p__Firmicutes_A_k10 <- read_and_format_orpheum_json(sys_glob_path = "outputs/orpheum/p__Firmicutes_A/protein_ksize10/*json",
+                                              database = "p__Firmicutes_A",
+                                              alphabet = "protein",
+                                              ksize = 10)
+
+all_orph <- bind_rows(orph_plass_k7, orph_plass_k10, orph_plass_k15, orph_plass_k17,
+                      orph_roary_k6, orph_roary_k7, orph_roary_k10, orph_roary_k11,
+                      orph_roary_k13, orph_roary_k15, orph_roary_k17, orph_ruminococcusB_k6,
+                      orph_ruminococcusB_k7, orph_f__Lachnospiraceae_k6, orph_f__Lachnospiraceae_k7,
+                      orph_f__Lachnospiraceae_k10, orph_p__Firmicutes_A_k7, orph_p__Firmicutes_A_k10)
+
+all_orph_summary <- all_orph %>%
+  group_by(database, alphabet, ksize) %>%
+  summarise(across(starts_with(c('t', 'cod', 'non', 'low', 'read', 'nbhd')), mean)) %>%
+  select(database, alphabet, ksize, nbhd_reads, coding, non_coding,
+         translation_is_shorter_than_peptide_k_mer_size_1, 
+         translation_frame_has_stop_codon_s)
+
+kable(all_orph_summary, digits = 0, booktabs = T,
+      col.names = c("database", "alphabet", "ksize", "reads", "coding", "non-coding", "too short", "stop codon"))
+```
+
+```{r orpheum_as_pct}
+all_orph_summary_pct <- all_orph %>%
+  group_by(database, alphabet, ksize) %>%
+  summarise(across(starts_with(c('t', 'cod', 'non', 'low', 'read', 'nbhd')), mean)) %>%
+  mutate(coding = (coding/nbhd_reads) * 100,
+         non_coding = (non_coding/nbhd_reads) * 100,
+         translation_is_shorter_than_peptide_k_mer_size_1 = (translation_is_shorter_than_peptide_k_mer_size_1/nbhd_reads) *100,
+         translation_frame_has_stop_codon_s = (translation_frame_has_stop_codon_s/nbhd_reads)*100) %>%
+  select(database, ksize, coding, non_coding,
+         translation_is_shorter_than_peptide_k_mer_size_1, 
+         translation_frame_has_stop_codon_s)
+
+
+kable(all_orph_summary_pct, digits = 0, booktabs = T,
+      col.names = c("database", "alphabet", "ksize", "coding", "non-coding", "too short", "stop codon"))
+```
+
+```{r read_and_format_multiqc, eval = F}
+# Control
+nuc_reads_vs_aa_ref <- read_tsv("outputs/rgnv_sgc_original_paladin/multiqc_data/multiqc_samtools_flagstat.txt") %>%
+  select(Sample, 
+         nbhd_reads = flagstat_total, 
+         nbhd_reads_mapped_aa_ref = mapped_passed,
+         nbhd_reads_mapped_aa_ref_pct = mapped_passed_pct)
+
+# PLASS DB
+orph_aa_plass_k7_vs_aa_ref <- read_tsv("outputs/aa_paladin/plass_assembly/protein_ksize7/multiqc_data/multiqc_samtools_flagstat.txt") %>%
+  select(Sample, 
+         orph_aa_plass_k7_reads = flagstat_total, 
+         orph_aa_plass_k7_reads_mapped_aa_ref = mapped_passed,
+         orph_aa_plass_k7_reads_mapped_aa_ref_pct = mapped_passed_pct) %>%
+  left_join(nuc_reads_vs_aa_ref) %>%
+  mutate(orph_aa_plass_k7_pct_of_nbhd = (orph_aa_plass_k7_reads/nbhd_reads)*100,
+         orph_aa_plass_k7_pct_of_nbhd_mapped = (orph_aa_plass_k7_reads_mapped_aa_ref/nbhd_reads)*100)
+
+orph_aa_plass_k10_vs_aa_ref <- read_tsv("outputs/aa_paladin/plass_assembly/protein_ksize10/multiqc_data/multiqc_samtools_flagstat.txt") %>%
+  select(Sample, 
+         orph_aa_plass_k10_reads = flagstat_total, 
+         orph_aa_plass_k10_reads_mapped_aa_ref = mapped_passed,
+         orph_aa_plass_k10_reads_mapped_aa_ref_pct = mapped_passed_pct) %>%
+  left_join(nuc_reads_vs_aa_ref) %>%
+  mutate(orph_aa_plass_k10_pct_of_nbhd = (orph_aa_plass_k10_reads/nbhd_reads)*100,
+         orph_aa_plass_k10_pct_of_nbhd_mapped = (orph_aa_plass_k10_reads_mapped_aa_ref/nbhd_reads)*100)
+
+orph_nnc_plass_k7_vs_aa_ref <- read_tsv("outputs/nuc_noncoding_bwa/plass_assembly/protein_ksize7/multiqc_data/multiqc_samtools_flagstat.txt") %>%
+   replace_na(list(mapped_passed_pct = 0)) %>%
+  select(Sample, 
+         orph_nnc_plass_k7_reads = flagstat_total, 
+         orph_nnc_plass_k7_reads_mapped_aa_ref = mapped_passed,
+         orph_nnc_plass_k7_reads_mapped_aa_ref_pct = mapped_passed_pct) %>%
+  left_join(nuc_reads_vs_aa_ref) %>%
+  mutate(orph_nnc_plass_k7_pct_of_nbhd = (orph_nnc_plass_k7_reads/nbhd_reads)*100,
+         orph_nnc_plass_k7_pct_of_nbhd_mapped = (orph_nnc_plass_k7_reads_mapped_aa_ref/nbhd_reads)*100)
+
+orph_nnc_plass_k10_vs_aa_ref <- read_tsv("outputs/nuc_noncoding_bwa/plass_assembly/protein_ksize10/multiqc_data/multiqc_samtools_flagstat.txt")%>%
+   replace_na(list(mapped_passed_pct = 0)) %>%
+  select(Sample, 
+         orph_nnc_plass_k10_reads = flagstat_total, 
+         orph_nnc_plass_k10_reads_mapped_aa_ref = mapped_passed,
+         orph_nnc_plass_k10_reads_mapped_aa_ref_pct = mapped_passed_pct) %>%
+  left_join(nuc_reads_vs_aa_ref) %>%
+  mutate(orph_nnc_plass_k10_pct_of_nbhd = (orph_nnc_plass_k10_reads/nbhd_reads)*100,
+         orph_nnc_plass_k10_pct_of_nbhd_mapped = (orph_nnc_plass_k10_reads_mapped_aa_ref/nbhd_reads)*100)
+
+# ROARY DB
+
+orph_aa_roary_k7_vs_aa_ref <- read_tsv("outputs/aa_paladin/roary_with_megahit_and_isolates/protein_ksize7/multiqc_data/multiqc_samtools_flagstat.txt") %>%
+  select(Sample, 
+         orph_aa_roary_k7_reads = flagstat_total, 
+         orph_aa_roary_k7_reads_mapped_aa_ref = mapped_passed,
+         orph_aa_roary_k7_reads_mapped_aa_ref_pct = mapped_passed_pct) %>%
+  left_join(nuc_reads_vs_aa_ref) %>%
+  mutate(orph_aa_roary_k7_pct_of_nbhd = (orph_aa_roary_k7_reads/nbhd_reads)*100,
+         orph_aa_roary_k7_pct_of_nbhd_mapped = (orph_aa_roary_k7_reads_mapped_aa_ref/nbhd_reads)*100)
+
+orph_aa_roary_k10_vs_aa_ref <- read_tsv("outputs/aa_paladin/roary_with_megahit_and_isolates/protein_ksize10/multiqc_data/multiqc_samtools_flagstat.txt") %>%
+  select(Sample, 
+         orph_aa_roary_k10_reads = flagstat_total, 
+         orph_aa_roary_k10_reads_mapped_aa_ref = mapped_passed,
+         orph_aa_roary_k10_reads_mapped_aa_ref_pct = mapped_passed_pct) %>%
+  left_join(nuc_reads_vs_aa_ref) %>%
+  mutate(orph_aa_roary_k10_pct_of_nbhd = (orph_aa_roary_k10_reads/nbhd_reads)*100,
+         orph_aa_roary_k10_pct_of_nbhd_mapped = (orph_aa_roary_k10_reads_mapped_aa_ref/nbhd_reads)*100)
+
+orph_nnc_roary_k7_vs_aa_ref <- read_tsv("outputs/nuc_noncoding_bwa/roary_with_megahit_and_isolates/protein_ksize7/multiqc_data/multiqc_samtools_flagstat.txt") %>%
+   replace_na(list(mapped_passed_pct = 0)) %>%
+  select(Sample, 
+         orph_nnc_roary_k7_reads = flagstat_total, 
+         orph_nnc_roary_k7_reads_mapped_aa_ref = mapped_passed,
+         orph_nnc_roary_k7_reads_mapped_aa_ref_pct = mapped_passed_pct) %>%
+  left_join(nuc_reads_vs_aa_ref) %>%
+  mutate(orph_nnc_roary_k7_pct_of_nbhd = (orph_nnc_roary_k7_reads/nbhd_reads)*100,
+         orph_nnc_roary_k7_pct_of_nbhd_mapped = (orph_nnc_roary_k7_reads_mapped_aa_ref/nbhd_reads)*100)
+
+orph_nnc_roary_k10_vs_aa_ref <- read_tsv("outputs/nuc_noncoding_bwa/roary_with_megahit_and_isolates/protein_ksize10/multiqc_data/multiqc_samtools_flagstat.txt")%>%
+   replace_na(list(mapped_passed_pct = 0)) %>%
+  select(Sample, 
+         orph_nnc_roary_k10_reads = flagstat_total, 
+         orph_nnc_roary_k10_reads_mapped_aa_ref = mapped_passed,
+         orph_nnc_roary_k10_reads_mapped_aa_ref_pct = mapped_passed_pct) %>%
+  left_join(nuc_reads_vs_aa_ref) %>%
+  mutate(orph_nnc_roary_k10_pct_of_nbhd = (orph_nnc_roary_k10_reads/nbhd_reads)*100,
+         orph_nnc_roary_k10_pct_of_nbhd_mapped = (orph_nnc_roary_k10_reads_mapped_aa_ref/nbhd_reads)*100)
+
+```
+
+```{r combine_multiqc, eval = F}
+all_multiqc <- Reduce(function(...) merge(..., by = c("Sample", "nbhd_reads", "nbhd_reads_mapped_aa_ref", "nbhd_reads_mapped_aa_ref_pct"), all.x=TRUE), 
+       list(orph_aa_plass_k7_vs_aa_ref,
+            orph_aa_plass_k10_vs_aa_ref,
+            orph_nnc_plass_k7_vs_aa_ref,
+            orph_nnc_plass_k10_vs_aa_ref, 
+            orph_aa_roary_k7_vs_aa_ref,
+            orph_aa_roary_k10_vs_aa_ref, 
+            orph_nnc_roary_k7_vs_aa_ref,
+            orph_nnc_roary_k10_vs_aa_ref))
+```
+
+## Controls
+
+```{r nbhd_reads}
+nbhd_reads <- orph_plass_k10 %>%
+  select(sample, nbhd_reads)
+```
+
+```{r control, fig.cap="\\label{fig:control}Mean percent mapped reads against AA reference pangenome. On average, **66.7% of reads** mapped against the pagenome reference using the paladin amino acid mapper. This number estimates the lower limit of reads that should be protein coding; at least this many reads should.", fig.height=2, fig.width = 4}
+nuc_reads_vs_aa_ref <- read_tsv("outputs/rgnv_sgc_original_paladin/multiqc_data/multiqc_samtools_flagstat.txt") %>%
+  mutate(sample = gsub("_GCF_900036035.1_RGNV35913_genomic.fna", "", Sample)) %>%
+  left_join(nbhd_reads, by = "sample") %>%
+  select(sample, nbhd_reads, mapped_passed) %>%
+  mutate(mapped_passed_pct = (mapped_passed/nbhd_reads)*100)
+
+mean_mapped_passed_pct <- nuc_reads_vs_aa_ref %>% 
+  pull(mapped_passed_pct) %>% 
+  mean() %>%
+  signif(3)
+
+control_plt <- ggplot(nuc_reads_vs_aa_ref, aes(x = mapped_passed_pct)) +
+  geom_density() +
+  xlim(0, 100) +
+  geom_vline(aes(xintercept = mean(mapped_passed_pct)), col='grey', linetype = "dashed") +
+  geom_text(aes(x=mean_mapped_passed_pct/2, label=paste0("Mean\n", mean_mapped_passed_pct), y=.02)) +
+  ggplot_base 
+control_plt
+```
+
+## Experimental DB1: PLASS assembly
+
+```{r aa_paladin_plass, fig.cap="\\label{fig:aa_paladin_plass} Reads predicted to be coding by orpheum using the PLASS database. Left panels) Most reads designated as coding were translated into multiple reading frames, leading to more reads being predicted as coding than were in the original fastq file. Right panels) When these reads were mapped against the pangenome reference, the mean percent of reads that mapped was ~39%, indicating that only ~1/3 of predicted ORFs map to the reference pangenome. Taken together, this indicates that we get many false positives when using PLASS as a reference database. This makes sense -- I noticed that many reads were translated into many reading frames. When I BLASTed the amino acid translations for all the ORFs for a single read, there was usually one or two great matches in nr, and the rest looked wrong. This is probably a result of PLASS being so promiscuous and assembling many reads in the wrong ORF.", fig.height = 4}
+
+aa_paladin_plass_k7 <- plot_flagstat_aa(flagstat_path = "outputs/aa_paladin/plass_assembly/protein_ksize7/multiqc_data/multiqc_samtools_flagstat.txt",
+              ksize = 7, nbhd_reads = nbhd_reads, database = "plass_assembly", alphabet = "protein") 
+
+aa_paladin_plass_k10 <- plot_flagstat_aa(flagstat_path = "outputs/aa_paladin/plass_assembly/protein_ksize10/multiqc_data/multiqc_samtools_flagstat.txt",
+              ksize = 10, nbhd_reads = nbhd_reads, database = "plass_assembly", alphabet = "protein")
+  
+ggarrange(aa_paladin_plass_k7, aa_paladin_plass_k10, nrow = 2)
+
+#t.test(orph_aa_plass_k7_vs_aa_ref$mapped_passed_pct, orph_aa_plass_k10_vs_aa_ref$mapped_passed_pct, paired = T)
+```
+
+```{r nucnoncoding_plass, fig.height = 2, fig.cap="\\label{fig:nucnoncoding_plass} While few reads were classified as non-coding by orpheum using the plass database (see Table 1), a large percentage of those reads still mapped to the reference pangenome, which consisted only of CDS."}
+nnc_bwa_plass_k7 <- plot_flagstat_nnc(flagstat_path = "outputs/nuc_noncoding_bwa/plass_assembly/protein_ksize7/multiqc_data/multiqc_samtools_flagstat.txt",
+                                                  ksize = 7, database = "plass_assembly", alphabet = "protein")
+
+nnc_bwa_plass_k10 <- plot_flagstat_nnc(flagstat_path = "outputs/nuc_noncoding_bwa/plass_assembly/protein_ksize10/multiqc_data/multiqc_samtools_flagstat.txt",
+                                                  ksize = 10, database = "plass_assembly", alphabet = "protein")
+
+ggarrange(nnc_bwa_plass_k7, nnc_bwa_plass_k10)
+
+#t.test(orph_nnc_plass_k7_vs_aa_ref$mapped_passed_pct, orph_nnc_plass_k10_vs_aa_ref$mapped_passed_pct, paired = T)
+```
+
+## Experimental DB2: Reference pangenome
+
++ The <u>reference pangenome</u> is ~37k prokka predicted protein sequences from 76 *R. gnavus* isolates from RefSeq and megahit assemblies of R. gnavus sgc nbhds
+
+```{r aa_roary, fig.cap="\\label{fig:aa_roary} Reads predicted to be coding by orpheum using the pangenome database. Left panel) Most reads designated as coding were translated into one reading frame, leading to fewer reads being predicted as coding than were in the original fastq file. Right panel) When these reads were mapped against the pangenome reference, the mean percent of reads that mapped was ~97%, indicating that almost all predicted ORFs map to the reference pangenome. Taken together, this indicates that we get few false positives when using the pangenome as a reference database.", fig.height = 11}
+
+aa_paladin_roary_k6 <- plot_flagstat_aa(flagstat_path = "outputs/aa_paladin/roary_with_megahit_and_isolates/protein_ksize6/multiqc_data/multiqc_samtools_flagstat.txt",
+                                        ksize = 6, nbhd_reads = nbhd_reads, database = "roary", alphabet = "protein")
+
+aa_paladin_roary_k7 <- plot_flagstat_aa(flagstat_path = "outputs/aa_paladin/roary_with_megahit_and_isolates/protein_ksize7/multiqc_data/multiqc_samtools_flagstat.txt",
+                                        ksize = 7, nbhd_reads = nbhd_reads, database = "roary", alphabet = "protein") 
+
+aa_paladin_roary_k10 <- plot_flagstat_aa(flagstat_path = "outputs/aa_paladin/roary_with_megahit_and_isolates/protein_ksize10/multiqc_data/multiqc_samtools_flagstat.txt",
+                                        ksize = 10, nbhd_reads = nbhd_reads, database = "roary", alphabet = "protein")
+
+aa_paladin_roary_k11 <- plot_flagstat_aa(flagstat_path = "outputs/aa_paladin/roary_with_megahit_and_isolates/dayhoff_ksize11/multiqc_data/multiqc_samtools_flagstat.txt",
+                                        ksize = 11, nbhd_reads = nbhd_reads, database = "roary", alphabet = "dayhoff") 
+aa_paladin_roary_k13 <- plot_flagstat_aa(flagstat_path = "outputs/aa_paladin/roary_with_megahit_and_isolates/dayhoff_ksize13/multiqc_data/multiqc_samtools_flagstat.txt",
+                                        ksize = 13, nbhd_reads = nbhd_reads, database = "roary", alphabet = "dayhoff") 
+aa_paladin_roary_k15 <- plot_flagstat_aa(flagstat_path = "outputs/aa_paladin/roary_with_megahit_and_isolates/dayhoff_ksize15/multiqc_data/multiqc_samtools_flagstat.txt",
+                                        ksize = 15, nbhd_reads = nbhd_reads, database = "roary", alphabet = "dayhoff") 
+aa_paladin_roary_k17 <- plot_flagstat_aa(flagstat_path = "outputs/aa_paladin/roary_with_megahit_and_isolates/dayhoff_ksize17/multiqc_data/multiqc_samtools_flagstat.txt",
+                                        ksize = 17, nbhd_reads = nbhd_reads, database = "roary", alphabet = "dayhoff") 
+
+ggarrange(aa_paladin_roary_k6, aa_paladin_roary_k7, aa_paladin_roary_k10, 
+          aa_paladin_roary_k11, aa_paladin_roary_k13, aa_paladin_roary_k15, 
+          aa_paladin_roary_k17, nrow = 7)
+
+#t.test(orph_aa_roary_k7_vs_aa_ref$mapped_passed_pct, orph_aa_roary_k10_vs_aa_ref$mapped_passed_pct, paired = T)
+```
+
+```{r nucnoncoding_roary, fig.height = 8, fig.cap="\\label{fig:nucnoncoding_roary} While many reads were classified as non-coding by orpheum using the pangenome reference database (see Table 1), a large percentage of those reads still mapped to the reference pangenome, which consisted only of CDS."}
+
+nnc_bwa_roary_k6 <- plot_flagstat_nnc(flagstat_path = "outputs/nuc_noncoding_bwa/roary_with_megahit_and_isolates/protein_ksize6/multiqc_data/multiqc_samtools_flagstat.txt",
+                                                  ksize = 6, database = "roary", alphabet = "protein")
+
+nnc_bwa_roary_k7 <- plot_flagstat_nnc(flagstat_path = "outputs/nuc_noncoding_bwa/roary_with_megahit_and_isolates/protein_ksize7/multiqc_data/multiqc_samtools_flagstat.txt",
+                                                  ksize = 7, database = "roary", alphabet = "protein")
+
+nnc_bwa_roary_k10 <- plot_flagstat_nnc(flagstat_path = "outputs/nuc_noncoding_bwa/roary_with_megahit_and_isolates/protein_ksize10/multiqc_data/multiqc_samtools_flagstat.txt",
+                                                  ksize = 10, database = "roary", alphabet = "protein")
+
+nnc_bwa_roary_k11 <- plot_flagstat_nnc(flagstat_path = "outputs/nuc_noncoding_bwa/roary_with_megahit_and_isolates/dayhoff_ksize11/multiqc_data/multiqc_samtools_flagstat.txt",
+                                                  ksize = 11, database = "roary", alphabet = "dayhoff")
+
+nnc_bwa_roary_k13 <- plot_flagstat_nnc(flagstat_path = "outputs/nuc_noncoding_bwa/roary_with_megahit_and_isolates/dayhoff_ksize13/multiqc_data/multiqc_samtools_flagstat.txt",
+                                                  ksize = 13, database = "roary", alphabet = "dayhoff")
+
+nnc_bwa_roary_k15 <- plot_flagstat_nnc(flagstat_path = "outputs/nuc_noncoding_bwa/roary_with_megahit_and_isolates/dayhoff_ksize15/multiqc_data/multiqc_samtools_flagstat.txt",
+                                                  ksize = 15, database = "roary", alphabet = "dayhoff")
+
+nnc_bwa_roary_k17 <- plot_flagstat_nnc(flagstat_path = "outputs/nuc_noncoding_bwa/roary_with_megahit_and_isolates/dayhoff_ksize17/multiqc_data/multiqc_samtools_flagstat.txt",
+                                                  ksize = 17, database = "roary", alphabet = "dayhoff")
+
+ggarrange(nnc_bwa_roary_k6, nnc_bwa_roary_k7, nnc_bwa_roary_k10, nnc_bwa_roary_k11,
+          nnc_bwa_roary_k13, nnc_bwa_roary_k15, nnc_bwa_roary_k17,
+          nrow = 4, ncol =2)
+
+#t.test(orph_nnc_roary_k7_vs_aa_ref$mapped_passed_pct, orph_nnc_roary_k10_vs_aa_ref$mapped_passed_pct, paired = T)
+```
+
+```{r nucnoncoding_roary_mapping_quality, fig.height = 8, fig.cap = "\\label{fig:nucnoncoding_roary_mapping_quality} Average per-read error rate for reads that were predicted to be non-coding but mapped to the nucleotide reference pangenome. To calculate the error rate, samtools adds up the number of mismatches (from the NM auxiliary tag) and divides that by the number of aligned bases. Soft and hard-clipped bases aren't included since they aren't aligned."}
+
+nnc_bwa_roary_k6_stat <- plot_stat_nnc(sys_glob_stat = "outputs/nuc_noncoding_bwa/roary_with_megahit_and_isolates/protein_ksize6/*.stat",
+              ksize = 6, alphabet = "protein", database = "roary")
+
+nnc_bwa_roary_k7_stat <- plot_stat_nnc(sys_glob_stat = "outputs/nuc_noncoding_bwa/roary_with_megahit_and_isolates/protein_ksize7/*.stat",
+              ksize = 7, alphabet = "protein", database = "roary")
+
+nnc_bwa_roary_k10_stat <- plot_stat_nnc(sys_glob_stat = "outputs/nuc_noncoding_bwa/roary_with_megahit_and_isolates/protein_ksize10/*.stat",
+              ksize = 10, alphabet = "protein", database = "roary")
+
+nnc_bwa_roary_k11_stat <- plot_stat_nnc(sys_glob_stat = "outputs/nuc_noncoding_bwa/roary_with_megahit_and_isolates/dayhoff_ksize11/*.stat",
+              ksize = 11, alphabet = "dayhoff", database = "roary")
+
+nnc_bwa_roary_k13_stat <- plot_stat_nnc(sys_glob_stat = "outputs/nuc_noncoding_bwa/roary_with_megahit_and_isolates/dayhoff_ksize13/*.stat",
+              ksize = 13, alphabet = "dayhoff", database = "roary")
+
+nnc_bwa_roary_k15_stat <- plot_stat_nnc(sys_glob_stat = "outputs/nuc_noncoding_bwa/roary_with_megahit_and_isolates/dayhoff_ksize15/*.stat",
+              ksize = 15, alphabet = "dayhoff", database = "roary")
+
+nnc_bwa_roary_k17_stat <- plot_stat_nnc(sys_glob_stat = "outputs/nuc_noncoding_bwa/roary_with_megahit_and_isolates/dayhoff_ksize17/*.stat",
+              ksize = 17, alphabet = "dayhoff", database = "roary")
+
+ggarrange(nnc_bwa_roary_k6_stat, nnc_bwa_roary_k7_stat, nnc_bwa_roary_k10_stat, 
+          nnc_bwa_roary_k11_stat, nnc_bwa_roary_k13_stat, nnc_bwa_roary_k15_stat, 
+          nnc_bwa_roary_k17_stat,
+          ncol = 2, nrow = 4)
+```
+
+```{r nuccoding_roary, fig.height = 8, fig.cap = "\\label{fig:nuccoding_roary} Almost all reads that are classified as coding map to the nucleotide sequences from the pangenome. Those that do not map represent coding sequences that were predicted by orpheum over and above what can be discovered by mapping alone."}
+
+
+nc_bwa_roary_k6 <- plot_flagstat_nc(flagstat_path = "outputs/nuc_coding_bwa/roary_with_megahit_and_isolates/protein_ksize6/multiqc_data/multiqc_samtools_flagstat.txt",
+                                     ksize = 6, database = "roary", alphabet = "protein")
+
+nc_bwa_roary_k7 <- plot_flagstat_nc(flagstat_path = "outputs/nuc_coding_bwa/roary_with_megahit_and_isolates/protein_ksize7/multiqc_data/multiqc_samtools_flagstat.txt",
+                                     ksize = 7, database = "roary", alphabet = "protein")
+
+nc_bwa_roary_k10 <- plot_flagstat_nc(flagstat_path = "outputs/nuc_coding_bwa/roary_with_megahit_and_isolates/protein_ksize10/multiqc_data/multiqc_samtools_flagstat.txt",
+                                      ksize = 10, database = "roary", alphabet = "protein")
+
+nc_bwa_roary_k11 <- plot_flagstat_nc(flagstat_path = "outputs/nuc_coding_bwa/roary_with_megahit_and_isolates/dayhoff_ksize11/multiqc_data/multiqc_samtools_flagstat.txt",
+                                     ksize = 11, database = "roary", alphabet = "dayhoff")
+
+nc_bwa_roary_k13 <- plot_flagstat_nc(flagstat_path = "outputs/nuc_coding_bwa/roary_with_megahit_and_isolates/dayhoff_ksize13/multiqc_data/multiqc_samtools_flagstat.txt",
+                                     ksize = 13, database = "roary", alphabet = "dayhoff")
+
+nc_bwa_roary_k15 <- plot_flagstat_nc(flagstat_path = "outputs/nuc_coding_bwa/roary_with_megahit_and_isolates/dayhoff_ksize15/multiqc_data/multiqc_samtools_flagstat.txt",
+                                     ksize = 15, database = "roary", alphabet = "dayhoff")
+
+nc_bwa_roary_k17 <- plot_flagstat_nc(flagstat_path = "outputs/nuc_coding_bwa/roary_with_megahit_and_isolates/dayhoff_ksize17/multiqc_data/multiqc_samtools_flagstat.txt",
+                                      ksize = 17, database = "roary", alphabet = "dayhoff")
+
+ggarrange(nc_bwa_roary_k6, nc_bwa_roary_k7, nc_bwa_roary_k10, nc_bwa_roary_k11, 
+          nc_bwa_roary_k13, nc_bwa_roary_k15, nc_bwa_roary_k17,
+          ncol = 2, nrow = 4)
+```
+
+```{r nuc_coding_roary_mapping_quality, fig.height = 8, fig.cap = "\\label{fig:nuc_coding_roary_mapping_quality} Average per-read error rate for reads that were predicted to be coding and mapped to the nucleotide reference pangenome. To calculate the error rate, samtools adds up the number of mismatches (from the NM auxiliary tag) and divides that by the number of aligned bases. Soft and hard-clipped bases aren't included since they aren't aligned."}
+
+nc_bwa_roary_k6_stat <- plot_stat_nnc(sys_glob_stat = "outputs/nuc_coding_bwa/roary_with_megahit_and_isolates/protein_ksize6/*.stat",
+              ksize = 6, alphabet = "protein", database = "roary")
+
+nc_bwa_roary_k7_stat <- plot_stat_nnc(sys_glob_stat = "outputs/nuc_coding_bwa/roary_with_megahit_and_isolates/protein_ksize7/*.stat",
+              ksize = 7, alphabet = "protein", database = "roary")
+
+nc_bwa_roary_k10_stat <- plot_stat_nnc(sys_glob_stat = "outputs/nuc_coding_bwa/roary_with_megahit_and_isolates/protein_ksize10/*.stat",
+              ksize = 10, alphabet = "protein", database = "roary")
+
+nc_bwa_roary_k11_stat <- plot_stat_nnc(sys_glob_stat = "outputs/nuc_coding_bwa/roary_with_megahit_and_isolates/dayhoff_ksize11/*.stat",
+              ksize = 11, alphabet = "dayhoff", database = "roary")
+
+nc_bwa_roary_k13_stat <- plot_stat_nnc(sys_glob_stat = "outputs/nuc_coding_bwa/roary_with_megahit_and_isolates/dayhoff_ksize13/*.stat",
+              ksize = 13, alphabet = "dayhoff", database = "roary")
+
+nc_bwa_roary_k15_stat <- plot_stat_nnc(sys_glob_stat = "outputs/nuc_coding_bwa/roary_with_megahit_and_isolates/dayhoff_ksize15/*.stat",
+              ksize = 15, alphabet = "dayhoff", database = "roary")
+
+nc_bwa_roary_k17_stat <- plot_stat_nnc(sys_glob_stat = "outputs/nuc_coding_bwa/roary_with_megahit_and_isolates/dayhoff_ksize17/*.stat",
+              ksize = 17, alphabet = "dayhoff", database = "roary")
+
+ggarrange(nc_bwa_roary_k6_stat, nc_bwa_roary_k7_stat, nc_bwa_roary_k10_stat,
+          nc_bwa_roary_k11_stat, nc_bwa_roary_k13_stat, nc_bwa_roary_k15_stat, 
+          nc_bwa_roary_k17_stat, ncol = 2, nrow = 4)
+```
+
+
+## Experimental DB3: GTDB ruminococcusB
+
+```{r aa_ruminococcusB, fig.cap="\\label{fig:aa_ruminococcusB} Reads predicted to be coding by orpheum using the ruminococcusB database. Left panel) Most reads designated as coding were translated into one reading frame, leading to fewer reads being predicted as coding than were in the original fastq file. Right panel) When these reads were mapped against the pangenome reference, the mean percent of reads that mapped was high, indicating that almost all predicted ORFs map to the reference pangenome. Notably, the ruminococcusB database predicts fewer coding reads than the pangenome database. Given that the pangenome database contains protein sequences from isolates and from metagenome assemblies, this likely indicates that the ruminococcusB database is missing many real protein kmers. Hopefully this will be alleviated when we use more of GTDB in the database.", fig.height = 3}
+
+aa_paladin_ruminococcusB_k6 <- plot_flagstat_aa(flagstat_path = "outputs/aa_paladin/ruminococcusB/protein_ksize6/multiqc_data/multiqc_samtools_flagstat.txt",
+                                        ksize = 6, nbhd_reads = nbhd_reads, database = "ruminococcusB", alphabet = "protein")
+
+aa_paladin_ruminococcusB_k7 <- plot_flagstat_aa(flagstat_path = "outputs/aa_paladin/ruminococcusB/protein_ksize7/multiqc_data/multiqc_samtools_flagstat.txt",
+                                        ksize = 7, nbhd_reads = nbhd_reads, database = "ruminococcusB", alphabet = "protein") 
+
+ggarrange(aa_paladin_ruminococcusB_k6, aa_paladin_ruminococcusB_k7, nrow = 2)
+
+#t.test(orph_aa_ruminococcusB_k7_vs_aa_ref$mapped_passed_pct, orph_aa_ruminococcusB_k10_vs_aa_ref$mapped_passed_pct, paired = T)
+```
+
+```{r nucnoncoding_ruminococcusB, fig.height = 2, fig.cap="\\label{fig:nucnoncoding_ruminococcusB} While many reads were classified as non-coding by orpheum using the ruminococcusB database (see Table 1), a large percentage of those reads still mapped to the reference pangenome, which consisted only of CDS."}
+
+nnc_bwa_ruminococcusB_k6 <- plot_flagstat_nnc(flagstat_path = "outputs/nuc_noncoding_bwa/ruminococcusB/protein_ksize6/multiqc_data/multiqc_samtools_flagstat.txt",
+                                                  ksize = 6, database = "ruminococcusB", alphabet = "protein")
+
+nnc_bwa_ruminococcusB_k7 <- plot_flagstat_nnc(flagstat_path = "outputs/nuc_noncoding_bwa/ruminococcusB/protein_ksize7/multiqc_data/multiqc_samtools_flagstat.txt",
+                                                  ksize = 7, database = "ruminococcusB", alphabet = "protein")
+
+ggarrange(nnc_bwa_ruminococcusB_k6, nnc_bwa_ruminococcusB_k7, ncol =2)
+
+#t.test(orph_nnc_ruminococcusB_k7_vs_aa_ref$mapped_passed_pct, orph_nnc_ruminococcusB_k10_vs_aa_ref$mapped_passed_pct, paired = T)
+```
+
+```{r nucnoncoding_ruminococcusB_mapping_quality, fig.height = 2, fig.cap = "\\label{fig:nucnoncoding_ruminococcusB_mapping_quality} Average per-read error rate for reads that were predicted to be non-coding but mapped to the nucleotide reference pangenome. To calculate the error rate, samtools adds up the number of mismatches (from the NM auxiliary tag) and divides that by the number of aligned bases. Soft and hard-clipped bases aren't included since they aren't aligned."}
+
+nnc_bwa_ruminococcusB_k6_stat <- plot_stat_nnc(sys_glob_stat = "outputs/nuc_noncoding_bwa/ruminococcusB/protein_ksize6/*.stat",
+              ksize = 6, alphabet = "protein", database = "ruminococcusB")
+
+nnc_bwa_ruminococcusB_k7_stat <- plot_stat_nnc(sys_glob_stat = "outputs/nuc_noncoding_bwa/ruminococcusB/protein_ksize7/*.stat",
+              ksize = 7, alphabet = "protein", database = "ruminococcusB")
+
+ggarrange(nnc_bwa_ruminococcusB_k6_stat, nnc_bwa_ruminococcusB_k7_stat, ncol = 2)
+```
+
+```{r nuccoding_ruminococcusB, fig.height = 2, fig.cap = "\\label{fig:nuccoding_ruminococcusB} Almost all reads that are classified as coding map to the nucleotide sequences from the reference pangenome. Those that do not map represent coding sequences that were predicted by orpheum over and above what can be discovered by mapping alone."}
+
+
+nc_bwa_ruminococcusB_k6 <- plot_flagstat_nc(flagstat_path = "outputs/nuc_coding_bwa/ruminococcusB/protein_ksize6/multiqc_data/multiqc_samtools_flagstat.txt",
+                                     ksize = 6, database = "ruminococcusB", alphabet = "protein")
+
+nc_bwa_ruminococcusB_k7 <- plot_flagstat_nc(flagstat_path = "outputs/nuc_coding_bwa/ruminococcusB/protein_ksize7/multiqc_data/multiqc_samtools_flagstat.txt",
+                                     ksize = 7, database = "ruminococcusB", alphabet = "protein")
+
+ggarrange(nc_bwa_ruminococcusB_k6, nc_bwa_ruminococcusB_k7, ncol = 2)
+```
+
+```{r nuc_coding_ruminococcusB_mapping_quality, fig.height = 2, fig.cap = "\\label{fig:nuc_coding_ruminococcusB_mapping_quality} Average per-read error rate for reads that were predicted to be coding and mapped to the nucleotide reference pangenome. To calculate the error rate, samtools adds up the number of mismatches (from the NM auxiliary tag) and divides that by the number of aligned bases. Soft and hard-clipped bases aren't included since they aren't aligned."}
+
+nc_bwa_ruminococcusB_k6_stat <- plot_stat_nnc(sys_glob_stat = "outputs/nuc_coding_bwa/ruminococcusB/protein_ksize6/*.stat",
+              ksize = 6, alphabet = "protein", database = "ruminococcusB")
+
+nc_bwa_ruminococcusB_k7_stat <- plot_stat_nnc(sys_glob_stat = "outputs/nuc_coding_bwa/ruminococcusB/protein_ksize7/*.stat",
+              ksize = 7, alphabet = "protein", database = "ruminococcusB")
+
+ggarrange(nc_bwa_ruminococcusB_k6_stat, nc_bwa_ruminococcusB_k7_stat, ncol = 2)
+```
+
+
+## Experimental DB4: GTDB family f__Lachnospiraceae
+
+```{r aa_f__Lachnospiraceae, fig.cap="\\label{fig:aa_f__Lachnospiraceae} Reads predicted to be coding by orpheum using the pangenome database. Left panel) Most reads designated as coding were translated into one reading frame, leading to fewer reads being predicted as coding than were in the original fastq file. Right panel) When these reads were mapped against the pangenome reference, the mean percent of reads that mapped was ~97%, indicating that almost all predicted ORFs map to the reference pangenome. Taken together, this indicates that we get few false positives when using the pangenome as a reference database.", fig.height = 6}
+
+aa_paladin_f__Lachnospiraceae_k6 <- plot_flagstat_aa(flagstat_path = "outputs/aa_paladin/f__Lachnospiraceae/protein_ksize6/multiqc_data/multiqc_samtools_flagstat.txt",
+                                        ksize = 6, nbhd_reads = nbhd_reads, database = "f__Lachnospiraceae", alphabet = "protein")
+
+aa_paladin_f__Lachnospiraceae_k7 <- plot_flagstat_aa(flagstat_path = "outputs/aa_paladin/f__Lachnospiraceae/protein_ksize7/multiqc_data/multiqc_samtools_flagstat.txt",
+                                        ksize = 7, nbhd_reads = nbhd_reads, database = "f__Lachnospiraceae", alphabet = "protein") 
+
+aa_paladin_f__Lachnospiraceae_k10 <- plot_flagstat_aa(flagstat_path = "outputs/aa_paladin/f__Lachnospiraceae/protein_ksize10/multiqc_data/multiqc_samtools_flagstat.txt",
+                                        ksize = 10, nbhd_reads = nbhd_reads, database = "f__Lachnospiraceae", alphabet = "protein") 
+
+ggarrange(aa_paladin_f__Lachnospiraceae_k6, aa_paladin_f__Lachnospiraceae_k7, 
+          aa_paladin_f__Lachnospiraceae_k10, nrow = 3)
+
+#t.test(orph_aa_f__Lachnospiraceae_k7_vs_aa_ref$mapped_passed_pct, orph_aa_f__Lachnospiraceae_k10_vs_aa_ref$mapped_passed_pct, paired = T)
+```
+
+```{r nucnoncoding_f__Lachnospiraceae, fig.height = 4, fig.cap="\\label{fig:nucnoncoding_f__Lachnospiraceae} While many reads were classified as non-coding by orpheum using the pangenome reference database (see Table 1), a large percentage of those reads still mapped to the reference pangenome, which consisted only of CDS."}
+
+nnc_bwa_f__Lachnospiraceae_k6 <- plot_flagstat_nnc(flagstat_path = "outputs/nuc_noncoding_bwa/f__Lachnospiraceae/protein_ksize6/multiqc_data/multiqc_samtools_flagstat.txt",
+                                                  ksize = 6, database = "f__Lachnospiraceae", alphabet = "protein")
+
+nnc_bwa_f__Lachnospiraceae_k7 <- plot_flagstat_nnc(flagstat_path = "outputs/nuc_noncoding_bwa/f__Lachnospiraceae/protein_ksize7/multiqc_data/multiqc_samtools_flagstat.txt",
+                                                  ksize = 7, database = "f__Lachnospiraceae", alphabet = "protein")
+
+nnc_bwa_f__Lachnospiraceae_k10 <- plot_flagstat_nnc(flagstat_path = "outputs/nuc_noncoding_bwa/f__Lachnospiraceae/protein_ksize10/multiqc_data/multiqc_samtools_flagstat.txt",
+                                                  ksize = 10, database = "f__Lachnospiraceae", alphabet = "protein")
+
+ggarrange(nnc_bwa_f__Lachnospiraceae_k6, nnc_bwa_f__Lachnospiraceae_k7, 
+          nnc_bwa_f__Lachnospiraceae_k10, ncol =2, nrow = 2)
+
+#t.test(orph_nnc_f__Lachnospiraceae_k7_vs_aa_ref$mapped_passed_pct, orph_nnc_f__Lachnospiraceae_k10_vs_aa_ref$mapped_passed_pct, paired = T)
+```
+
+```{r nucnoncoding_f__Lachnospiraceae_mapping_quality, fig.height = 4, fig.cap = "\\label{fig:nucnoncoding_f__Lachnospiraceae_mapping_quality} Average per-read error rate for reads that were predicted to be non-coding but mapped to the nucleotide reference pangenome. To calculate the error rate, samtools adds up the number of mismatches (from the NM auxiliary tag) and divides that by the number of aligned bases. Soft and hard-clipped bases aren't included since they aren't aligned."}
+
+nnc_bwa_f__Lachnospiraceae_k6_stat <- plot_stat_nnc(sys_glob_stat = "outputs/nuc_noncoding_bwa/f__Lachnospiraceae/protein_ksize6/*.stat",
+              ksize = 6, alphabet = "protein", database = "f__Lachnospiraceae")
+
+nnc_bwa_f__Lachnospiraceae_k7_stat <- plot_stat_nnc(sys_glob_stat = "outputs/nuc_noncoding_bwa/f__Lachnospiraceae/protein_ksize7/*.stat",
+              ksize = 7, alphabet = "protein", database = "f__Lachnospiraceae")
+
+nnc_bwa_f__Lachnospiraceae_k10_stat <- plot_stat_nnc(sys_glob_stat = "outputs/nuc_noncoding_bwa/f__Lachnospiraceae/protein_ksize10/*.stat",
+              ksize = 10, alphabet = "protein", database = "f__Lachnospiraceae")
+
+ggarrange(nnc_bwa_f__Lachnospiraceae_k6_stat, nnc_bwa_f__Lachnospiraceae_k7_stat, 
+          nnc_bwa_f__Lachnospiraceae_k10_stat, ncol = 2, nrow = 2)
+```
+
+```{r nuccoding_f__Lachnospiraceae, fig.height = 4, fig.cap = "\\label{fig:nuccoding_f__Lachnospiraceae} Almost all reads that are classified as coding map to the nucleotide sequences from the pangenome. Those that do not map represent coding sequences that were predicted by orpheum over and above what can be discovered by mapping alone."}
+nc_bwa_f__Lachnospiraceae_k6 <- plot_flagstat_nc(flagstat_path = "outputs/nuc_coding_bwa/f__Lachnospiraceae/protein_ksize6/multiqc_data/multiqc_samtools_flagstat.txt",
+                                     ksize = 6, database = "f__Lachnospiraceae", alphabet = "protein")
+
+nc_bwa_f__Lachnospiraceae_k7 <- plot_flagstat_nc(flagstat_path = "outputs/nuc_coding_bwa/f__Lachnospiraceae/protein_ksize7/multiqc_data/multiqc_samtools_flagstat.txt",
+                                     ksize = 7, database = "f__Lachnospiraceae", alphabet = "protein")
+
+nc_bwa_f__Lachnospiraceae_k10 <- plot_flagstat_nc(flagstat_path = "outputs/nuc_coding_bwa/f__Lachnospiraceae/protein_ksize10/multiqc_data/multiqc_samtools_flagstat.txt",
+                                     ksize = 10, database = "f__Lachnospiraceae", alphabet = "protein")
+
+ggarrange(nc_bwa_f__Lachnospiraceae_k6, nc_bwa_f__Lachnospiraceae_k7,
+          nc_bwa_f__Lachnospiraceae_k10, ncol = 2, nrow = 2)
+```
+
+```{r nuc_coding_f__Lachnospiraceae_mapping_quality, fig.height = 4, fig.cap = "\\label{fig:nuc_coding_f__Lachnospiraceae_mapping_quality} Average per-read error rate for reads that were predicted to be coding and mapped to the nucleotide reference pangenome. To calculate the error rate, samtools adds up the number of mismatches (from the NM auxiliary tag) and divides that by the number of aligned bases. Soft and hard-clipped bases aren't included since they aren't aligned."}
+
+nc_bwa_f__Lachnospiraceae_k6_stat <- plot_stat_nnc(sys_glob_stat = "outputs/nuc_coding_bwa/f__Lachnospiraceae/protein_ksize6/*.stat",
+              ksize = 6, alphabet = "protein", database = "f__Lachnospiraceae")
+
+nc_bwa_f__Lachnospiraceae_k7_stat <- plot_stat_nnc(sys_glob_stat = "outputs/nuc_coding_bwa/f__Lachnospiraceae/protein_ksize7/*.stat",
+              ksize = 7, alphabet = "protein", database = "f__Lachnospiraceae")
+
+nc_bwa_f__Lachnospiraceae_k10_stat <- plot_stat_nnc(sys_glob_stat = "outputs/nuc_coding_bwa/f__Lachnospiraceae/protein_ksize10/*.stat",
+              ksize = 10, alphabet = "protein", database = "f__Lachnospiraceae")
+
+ggarrange(nc_bwa_f__Lachnospiraceae_k6_stat, nc_bwa_f__Lachnospiraceae_k7_stat, 
+          nc_bwa_f__Lachnospiraceae_k10_stat, ncol = 2, nrow = 2)
+```
+
+## Experimental DB5: GTDB family p__Firmicutes_A
+
+```{r aa_p__Firmicutes_A, fig.cap="\\label{fig:aa_p__Firmicutes_A} Reads predicted to be coding by orpheum using the pangenome database. Left panel) Most reads designated as coding were translated into one reading frame, leading to fewer reads being predicted as coding than were in the original fastq file. Right panel) When these reads were mapped against the pangenome reference, the mean percent of reads that mapped was ~97%, indicating that almost all predicted ORFs map to the reference pangenome. Taken together, this indicates that we get few false positives when using the pangenome as a reference database.", fig.height = 4}
+
+aa_paladin_p__Firmicutes_A_k7 <- plot_flagstat_aa(flagstat_path = "outputs/aa_paladin/p__Firmicutes_A/protein_ksize7/multiqc_data/multiqc_samtools_flagstat.txt",
+                                        ksize = 7, nbhd_reads = nbhd_reads, database = "p__Firmicutes_A", alphabet = "protein") 
+
+aa_paladin_p__Firmicutes_A_k10 <- plot_flagstat_aa(flagstat_path = "outputs/aa_paladin/p__Firmicutes_A/protein_ksize10/multiqc_data/multiqc_samtools_flagstat.txt",
+                                        ksize = 10, nbhd_reads = nbhd_reads, database = "p__Firmicutes_A", alphabet = "protein")
+
+ggarrange(aa_paladin_p__Firmicutes_A_k7, aa_paladin_p__Firmicutes_A_k10, nrow = 2)
+
+#t.test(orph_aa_p__Firmicutes_A_k7_vs_aa_ref$mapped_passed_pct, orph_aa_p__Firmicutes_A_k10_vs_aa_ref$mapped_passed_pct, paired = T)
+```
+
+```{r nucnoncoding_p__Firmicutes_A, fig.height = 2, fig.cap="\\label{fig:nucnoncoding_p__Firmicutes_A} While many reads were classified as non-coding by orpheum using the pangenome reference database (see Table 1), a large percentage of those reads still mapped to the reference pangenome, which consisted only of CDS."}
+
+nnc_bwa_p__Firmicutes_A_k7 <- plot_flagstat_nnc(flagstat_path = "outputs/nuc_noncoding_bwa/p__Firmicutes_A/protein_ksize7/multiqc_data/multiqc_samtools_flagstat.txt",
+                                                  ksize = 7, database = "p__Firmicutes_A", alphabet = "protein")
+
+nnc_bwa_p__Firmicutes_A_k10 <- plot_flagstat_nnc(flagstat_path = "outputs/nuc_noncoding_bwa/p__Firmicutes_A/protein_ksize10/multiqc_data/multiqc_samtools_flagstat.txt",
+                                                  ksize = 10, database = "p__Firmicutes_A", alphabet = "protein")
+
+ggarrange(nnc_bwa_p__Firmicutes_A_k7, nnc_bwa_p__Firmicutes_A_k10, ncol =2)
+
+#t.test(orph_nnc_p__Firmicutes_A_k7_vs_aa_ref$mapped_passed_pct, orph_nnc_p__Firmicutes_A_k10_vs_aa_ref$mapped_passed_pct, paired = T)
+```
+
+```{r nucnoncoding_p__Firmicutes_A_mapping_quality, fig.height = 2, fig.cap = "\\label{fig:nucnoncoding_p__Firmicutes_A_mapping_quality} Average per-read error rate for reads that were predicted to be non-coding but mapped to the nucleotide reference pangenome. To calculate the error rate, samtools adds up the number of mismatches (from the NM auxiliary tag) and divides that by the number of aligned bases. Soft and hard-clipped bases aren't included since they aren't aligned."}
+
+nnc_bwa_p__Firmicutes_A_k7_stat <- plot_stat_nnc(sys_glob_stat = "outputs/nuc_noncoding_bwa/p__Firmicutes_A/protein_ksize7/*.stat",
+              ksize = 7, alphabet = "protein", database = "p__Firmicutes_A")
+
+nnc_bwa_p__Firmicutes_A_k10_stat <- plot_stat_nnc(sys_glob_stat = "outputs/nuc_noncoding_bwa/p__Firmicutes_A/protein_ksize10/*.stat",
+              ksize = 10, alphabet = "protein", database = "p__Firmicutes_A")
+
+ggarrange(nnc_bwa_p__Firmicutes_A_k7_stat, nnc_bwa_p__Firmicutes_A_k10_stat, ncol = 2)
+```
+
+```{r nuccoding_p__Firmicutes_A, fig.height = 2, fig.cap = "\\label{fig:nuccoding_p__Firmicutes_A} Almost all reads that are classified as coding map to the nucleotide sequences from the pangenome. Those that do not map represent coding sequences that were predicted by orpheum over and above what can be discovered by mapping alone."}
+
+
+nc_bwa_p__Firmicutes_A_k7 <- plot_flagstat_nc(flagstat_path = "outputs/nuc_coding_bwa/p__Firmicutes_A/protein_ksize7/multiqc_data/multiqc_samtools_flagstat.txt",
+                                     ksize = 7, database = "p__Firmicutes_A", alphabet = "protein")
+
+nc_bwa_p__Firmicutes_A_k10 <- plot_flagstat_nc(flagstat_path = "outputs/nuc_coding_bwa/p__Firmicutes_A/protein_ksize10/multiqc_data/multiqc_samtools_flagstat.txt",
+                                     ksize = 10, database = "p__Firmicutes_A", alphabet = "protein")
+
+ggarrange(nc_bwa_p__Firmicutes_A_k7, nc_bwa_p__Firmicutes_A_k10, ncol = 2)
+```
+
+```{r nuc_coding_p__Firmicutes_A_mapping_quality, fig.height = 2, fig.cap = "\\label{fig:nuc_coding_p__Firmicutes_A_mapping_quality} Average per-read error rate for reads that were predicted to be coding and mapped to the nucleotide reference pangenome. To calculate the error rate, samtools adds up the number of mismatches (from the NM auxiliary tag) and divides that by the number of aligned bases. Soft and hard-clipped bases aren't included since they aren't aligned."}
+
+nc_bwa_p__Firmicutes_A_k7_stat <- plot_stat_nnc(sys_glob_stat = "outputs/nuc_coding_bwa/p__Firmicutes_A/protein_ksize7/*.stat",
+              ksize = 7, alphabet = "protein", database = "p__Firmicutes_A")
+
+nc_bwa_p__Firmicutes_A_k10_stat <- plot_stat_nnc(sys_glob_stat = "outputs/nuc_coding_bwa/p__Firmicutes_A/protein_ksize10/*.stat",
+              ksize = 10, alphabet = "protein", database = "p__Firmicutes_A")
+
+ggarrange(nc_bwa_p__Firmicutes_A_k7_stat, nc_bwa_p__Firmicutes_A_k10_stat, ncol = 2)
+```
+
+
+## Conclusions
+ 
++ PLASS is too promiscuous of an assembler to use to generate the reference DB; it leads to too many off-ORF predictions for reads.
++ The reference pangenome seems to work pretty well, it marginally outperforms just mapping reads with paladin, and all the coding reads map to the CDS in the pangenome.
+
+## TODO
+
++ GTDB reps/GTDB as db
++ Search for shine dalgarno sequences in non-coding reads (consensus seq AGGAGG). Although SD seqs are only 8 bp ahead of AUG (start codon), so may not be in majorit of seq. May be worth looking into other conserved intergenic seqs. 
+
+## References
+
++ Land et al. 2015: https://www.ncbi.nlm.nih.gov/pmc/articles/PMC4361730/
++ Ardern et al. 2020: https://www.ncbi.nlm.nih.gov/pmc/articles/PMC7457138/
++ Zehentner et al. 2020: https://www.biorxiv.org/content/10.1101/2020.11.18.388249v1.full.pdf
