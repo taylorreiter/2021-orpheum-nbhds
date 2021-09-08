@@ -327,7 +327,7 @@ rule paladin_og_fastq_seqs:
         ref="inputs/pan_genome_reference.faa",
         idx="inputs/pan_genome_reference.faa.pro",
         fastq="outputs/rgnv_sgc_original_results/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads.fa.gz"
-    output: "outputs/rgnv_sgc_original_paladin/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads.fa.sam"
+    output: temp("outputs/rgnv_sgc_original_paladin/{library}_GCF_900036035.1_RGNV35913_genomic.fna.gz.cdbg_ids.reads.fa.sam")
     conda: "envs/paladin.yml"
     resources: mem_mb = 2000
     threads: 1
