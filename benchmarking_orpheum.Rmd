@@ -53,6 +53,58 @@ read_and_format_orpheum_json <- function(sys_glob_path, database, alphabet, ksiz
      
   return(json_df)
 }
+
+read_and_format_orpheum_json_translation <- function(sys_glob_path, database, alphabet, ksize) {
+  file_prefix = paste0("outputs\\/orpheum\\/", database, "\\/", alphabet, "_ksize", ksize, "\\/")
+  json_df <- Sys.glob(sys_glob_path) %>%
+    set_names() %>%
+    map_dfr(~RJSONIO::fromJSON(content =., nullValue = NaN)$histogram_n_coding_frames_per_read, .id = "sample") %>%
+    clean_names() %>%
+    mutate(sample = gsub(file_prefix, "", sample)) %>%
+    mutate(sample = gsub("_GCF_900036035\\.1_RGNV35913_genomic\\.fna\\.gz\\.cdbg_ids\\.reads\\.summary\\.json", "", sample)) %>%
+    mutate(database = database) %>%
+    mutate(ksize = paste0("k=", ksize)) %>%
+    mutate(alphabet = alphabet)
+  
+  # make sure numbers are encoded as numeric, then replace NAs with 0s and sum to coding
+  json_df <- json_df %>%
+    #mutate_at(vars(starts_with("number_of_reads_with")), funs(as.numeric(as.character((.))))) %>%
+    mutate(across(where(~ anyNA(.) & is.numeric(.)), ~ replace_na(., 0))) %>%
+    mutate(coding_reads = rowSums(across(where(is.numeric))))
+  
+  # calculate percentage of reads translated into n number of coding frames
+  json_df <- json_df %>%
+    mutate(f_putative_coding_1_translation = ifelse(number_of_reads_with_1_putative_protein_coding_translations == 0, 0,
+                                                    number_of_reads_with_1_putative_protein_coding_translations/coding_reads)) %>%
+    mutate(f_putative_coding_2_translation = ifelse(number_of_reads_with_2_putative_protein_coding_translations == 0, 0,
+                                                    number_of_reads_with_2_putative_protein_coding_translations/coding_reads)) %>%
+    mutate(f_putative_coding_3_translation = ifelse(number_of_reads_with_3_putative_protein_coding_translations == 0, 0,
+                                                    number_of_reads_with_3_putative_protein_coding_translations/coding_reads)) %>%
+    mutate(f_putative_coding_4_translation = ifelse(number_of_reads_with_4_putative_protein_coding_translations == 0, 0,
+                                                    number_of_reads_with_4_putative_protein_coding_translations/coding_reads)) %>%
+    mutate(f_putative_coding_5_translation = ifelse(number_of_reads_with_5_putative_protein_coding_translations == 0, 0,
+                                                    number_of_reads_with_5_putative_protein_coding_translations/coding_reads)) %>%
+    mutate(f_putative_coding_6_translation = ifelse(number_of_reads_with_6_putative_protein_coding_translations == 0, 0,
+                                                    number_of_reads_with_6_putative_protein_coding_translations/coding_reads))
+  
+  return(json_df)
+}
+```
+
+```{r function_plot_orpheum}
+plot_orpheum_translation_frames <- function(orpheum_trans, ksize, alphabet, database){
+  orpheum_trans_long <- orpheum_trans %>%
+    select(sample, database, ksize, alphabet, starts_with("f_putative")) %>%
+    pivot_longer(cols = starts_with("f_putative"), names_to = "translation_frame", values_to = "fraction") %>%
+    mutate(translation_frame = gsub("f_putative_coding_", "", translation_frame)) %>%
+    mutate(translation_frame = gsub("_translation", "", translation_frame))
+  
+  ggplot(orpheum_trans_long, aes(x = translation_frame, y = fraction)) +
+    geom_violin(scale = "width") +
+    theme_minimal() +
+    labs(x = "number ofcoding frames per read", y = "fraction of putative coding reads",
+         title = paste0("db = ", database, ", alphabet = ", alphabet, ", k = ", ksize))
+}
 ```
 
 ```{r function_plot_flagstat}
@@ -133,6 +185,36 @@ plot_flagstat_nc <- function(flagstat_path, ksize, alphabet, database){
     geom_text(aes(label=paste0("mean = ", mean_mapped_passed_pct), 
                   x=mean_mapped_passed_pct/2, y = Inf), size = 4, vjust = 1)
   
+  return(plt)
+}
+
+# orpheum_json = orph_plass_k10
+# flagstat_path = "outputs/nuc_noncoding_bwa/plass_assembly/protein_ksize10/multiqc_data/multiqc_samtools_flagstat.txt"
+# ksize = 10
+# database = "plass_assembly" 
+# alphabet = "protein"
+
+plot_predicted_nnc_vs_flagstat_nnc <- function(orpheum_json, flagstat_path, ksize, alphabet, database){
+  orph_nnc_vs_reference <- read_tsv(flagstat_path) %>%
+    replace_na(list(mapped_passed_pct = 0)) %>%
+    mutate(Sample = gsub("_GCF_900036035\\.1_RGNV35913_genomic\\.fna", "", Sample)) %>%
+    left_join(orpheum_json, by = c("Sample" = "sample"))
+  
+  # label graph with mean 
+  mean_mapped_passed_pct <- orph_nnc_vs_reference %>% 
+    pull(mapped_passed_pct) %>% 
+    mean() %>%
+    signif(3)
+  
+  plt <- ggplot(orph_nnc_vs_reference, aes(x = (non_coding/nbhd_reads)*100, y = mapped_passed_pct)) +
+    geom_point(alpha = 0.5) +
+    ggplot_base +
+    labs(title = paste0("db = ", database, ", alphabet = ", alphabet, ", k = ", ksize), 
+         x = "% putative non coding reads",
+         y = "% putative non coding reads mapped to reference") +
+    geom_hline(aes(yintercept = mean(mapped_passed_pct)), col='grey', linetype = "dashed") +
+    geom_vline(aes(xintercept = mean((non_coding/nbhd_reads)*100)),  col='grey', linetype = "dashed")
+  plt
   return(plt)
 }
 ```
@@ -322,107 +404,105 @@ kable(all_orph_summary_pct, digits = 0, booktabs = T,
       col.names = c("database", "alphabet", "ksize", "coding", "non-coding", "too short", "stop codon"))
 ```
 
-```{r read_and_format_multiqc, eval = F}
-# Control
-nuc_reads_vs_aa_ref <- read_tsv("outputs/rgnv_sgc_original_paladin/multiqc_data/multiqc_samtools_flagstat.txt") %>%
-  select(Sample, 
-         nbhd_reads = flagstat_total, 
-         nbhd_reads_mapped_aa_ref = mapped_passed,
-         nbhd_reads_mapped_aa_ref_pct = mapped_passed_pct)
+```{r read_and_format_orpheum_json_translation}
+orph_trans_plass_k7 <- read_and_format_orpheum_json_translation(sys_glob_path = "outputs/orpheum/plass_assembly/protein_ksize7/*json",
+                                                                database = "plass_assembly",
+                                                                alphabet = "protein",
+                                                                ksize = 7)
 
-# PLASS DB
-orph_aa_plass_k7_vs_aa_ref <- read_tsv("outputs/aa_paladin/plass_assembly/protein_ksize7/multiqc_data/multiqc_samtools_flagstat.txt") %>%
-  select(Sample, 
-         orph_aa_plass_k7_reads = flagstat_total, 
-         orph_aa_plass_k7_reads_mapped_aa_ref = mapped_passed,
-         orph_aa_plass_k7_reads_mapped_aa_ref_pct = mapped_passed_pct) %>%
-  left_join(nuc_reads_vs_aa_ref) %>%
-  mutate(orph_aa_plass_k7_pct_of_nbhd = (orph_aa_plass_k7_reads/nbhd_reads)*100,
-         orph_aa_plass_k7_pct_of_nbhd_mapped = (orph_aa_plass_k7_reads_mapped_aa_ref/nbhd_reads)*100)
+orph_trans_plass_k10 <- read_and_format_orpheum_json_translation(sys_glob_path = "outputs/orpheum/plass_assembly/protein_ksize10/*json",
+                                                                 database = "plass_assembly",
+                                                                 alphabet = "protein",
+                                                                 ksize = 10)
 
-orph_aa_plass_k10_vs_aa_ref <- read_tsv("outputs/aa_paladin/plass_assembly/protein_ksize10/multiqc_data/multiqc_samtools_flagstat.txt") %>%
-  select(Sample, 
-         orph_aa_plass_k10_reads = flagstat_total, 
-         orph_aa_plass_k10_reads_mapped_aa_ref = mapped_passed,
-         orph_aa_plass_k10_reads_mapped_aa_ref_pct = mapped_passed_pct) %>%
-  left_join(nuc_reads_vs_aa_ref) %>%
-  mutate(orph_aa_plass_k10_pct_of_nbhd = (orph_aa_plass_k10_reads/nbhd_reads)*100,
-         orph_aa_plass_k10_pct_of_nbhd_mapped = (orph_aa_plass_k10_reads_mapped_aa_ref/nbhd_reads)*100)
+orph_trans_plass_k15 <- read_and_format_orpheum_json_translation(sys_glob_path = "outputs/orpheum/plass_assembly/dayhoff_ksize15/*json",
+                                                                 database = "plass_assembly",
+                                                                 alphabet = "dayhoff",
+                                                                 ksize = 15)
 
-orph_nnc_plass_k7_vs_aa_ref <- read_tsv("outputs/nuc_noncoding_bwa/plass_assembly/protein_ksize7/multiqc_data/multiqc_samtools_flagstat.txt") %>%
-   replace_na(list(mapped_passed_pct = 0)) %>%
-  select(Sample, 
-         orph_nnc_plass_k7_reads = flagstat_total, 
-         orph_nnc_plass_k7_reads_mapped_aa_ref = mapped_passed,
-         orph_nnc_plass_k7_reads_mapped_aa_ref_pct = mapped_passed_pct) %>%
-  left_join(nuc_reads_vs_aa_ref) %>%
-  mutate(orph_nnc_plass_k7_pct_of_nbhd = (orph_nnc_plass_k7_reads/nbhd_reads)*100,
-         orph_nnc_plass_k7_pct_of_nbhd_mapped = (orph_nnc_plass_k7_reads_mapped_aa_ref/nbhd_reads)*100)
+orph_trans_plass_k17 <- read_and_format_orpheum_json_translation(sys_glob_path = "outputs/orpheum/plass_assembly/dayhoff_ksize17/*json",
+                                                                 database = "plass_assembly",
+                                                                 alphabet = "dayhoff",
+                                                                 ksize = 17)
 
-orph_nnc_plass_k10_vs_aa_ref <- read_tsv("outputs/nuc_noncoding_bwa/plass_assembly/protein_ksize10/multiqc_data/multiqc_samtools_flagstat.txt")%>%
-   replace_na(list(mapped_passed_pct = 0)) %>%
-  select(Sample, 
-         orph_nnc_plass_k10_reads = flagstat_total, 
-         orph_nnc_plass_k10_reads_mapped_aa_ref = mapped_passed,
-         orph_nnc_plass_k10_reads_mapped_aa_ref_pct = mapped_passed_pct) %>%
-  left_join(nuc_reads_vs_aa_ref) %>%
-  mutate(orph_nnc_plass_k10_pct_of_nbhd = (orph_nnc_plass_k10_reads/nbhd_reads)*100,
-         orph_nnc_plass_k10_pct_of_nbhd_mapped = (orph_nnc_plass_k10_reads_mapped_aa_ref/nbhd_reads)*100)
+orph_trans_roary_k6 <- read_and_format_orpheum_json_translation(sys_glob_path = "outputs/orpheum/roary_with_megahit_and_isolates/protein_ksize6/*json",
+                                                                database = "roary",
+                                                                alphabet = "protein",
+                                                                ksize = 6)
 
-# ROARY DB
+orph_trans_roary_k7 <- read_and_format_orpheum_json_translation(sys_glob_path = "outputs/orpheum/roary_with_megahit_and_isolates/protein_ksize7/*json",
+                                                                database = "roary",
+                                                                alphabet = "protein",
+                                                                ksize = 7)
 
-orph_aa_roary_k7_vs_aa_ref <- read_tsv("outputs/aa_paladin/roary_with_megahit_and_isolates/protein_ksize7/multiqc_data/multiqc_samtools_flagstat.txt") %>%
-  select(Sample, 
-         orph_aa_roary_k7_reads = flagstat_total, 
-         orph_aa_roary_k7_reads_mapped_aa_ref = mapped_passed,
-         orph_aa_roary_k7_reads_mapped_aa_ref_pct = mapped_passed_pct) %>%
-  left_join(nuc_reads_vs_aa_ref) %>%
-  mutate(orph_aa_roary_k7_pct_of_nbhd = (orph_aa_roary_k7_reads/nbhd_reads)*100,
-         orph_aa_roary_k7_pct_of_nbhd_mapped = (orph_aa_roary_k7_reads_mapped_aa_ref/nbhd_reads)*100)
+orph_trans_roary_k10 <- read_and_format_orpheum_json_translation(sys_glob_path = "outputs/orpheum/roary_with_megahit_and_isolates/protein_ksize10/*json",
+                                                                 database = "roary",
+                                                                 alphabet = "protein",
+                                                                 ksize = 10)
 
-orph_aa_roary_k10_vs_aa_ref <- read_tsv("outputs/aa_paladin/roary_with_megahit_and_isolates/protein_ksize10/multiqc_data/multiqc_samtools_flagstat.txt") %>%
-  select(Sample, 
-         orph_aa_roary_k10_reads = flagstat_total, 
-         orph_aa_roary_k10_reads_mapped_aa_ref = mapped_passed,
-         orph_aa_roary_k10_reads_mapped_aa_ref_pct = mapped_passed_pct) %>%
-  left_join(nuc_reads_vs_aa_ref) %>%
-  mutate(orph_aa_roary_k10_pct_of_nbhd = (orph_aa_roary_k10_reads/nbhd_reads)*100,
-         orph_aa_roary_k10_pct_of_nbhd_mapped = (orph_aa_roary_k10_reads_mapped_aa_ref/nbhd_reads)*100)
+orph_trans_roary_k11 <- read_and_format_orpheum_json_translation(sys_glob_path = "outputs/orpheum/roary_with_megahit_and_isolates/dayhoff_ksize11/*json",
+                                                                 database = "roary",
+                                                                 alphabet = "dayhoff",
+                                                                 ksize = 11)
 
-orph_nnc_roary_k7_vs_aa_ref <- read_tsv("outputs/nuc_noncoding_bwa/roary_with_megahit_and_isolates/protein_ksize7/multiqc_data/multiqc_samtools_flagstat.txt") %>%
-   replace_na(list(mapped_passed_pct = 0)) %>%
-  select(Sample, 
-         orph_nnc_roary_k7_reads = flagstat_total, 
-         orph_nnc_roary_k7_reads_mapped_aa_ref = mapped_passed,
-         orph_nnc_roary_k7_reads_mapped_aa_ref_pct = mapped_passed_pct) %>%
-  left_join(nuc_reads_vs_aa_ref) %>%
-  mutate(orph_nnc_roary_k7_pct_of_nbhd = (orph_nnc_roary_k7_reads/nbhd_reads)*100,
-         orph_nnc_roary_k7_pct_of_nbhd_mapped = (orph_nnc_roary_k7_reads_mapped_aa_ref/nbhd_reads)*100)
+orph_trans_roary_k13 <- read_and_format_orpheum_json_translation(sys_glob_path = "outputs/orpheum/roary_with_megahit_and_isolates/dayhoff_ksize13/*json",
+                                                                 database = "roary",
+                                                                 alphabet = "dayhoff",
+                                                                 ksize = 13)
 
-orph_nnc_roary_k10_vs_aa_ref <- read_tsv("outputs/nuc_noncoding_bwa/roary_with_megahit_and_isolates/protein_ksize10/multiqc_data/multiqc_samtools_flagstat.txt")%>%
-   replace_na(list(mapped_passed_pct = 0)) %>%
-  select(Sample, 
-         orph_nnc_roary_k10_reads = flagstat_total, 
-         orph_nnc_roary_k10_reads_mapped_aa_ref = mapped_passed,
-         orph_nnc_roary_k10_reads_mapped_aa_ref_pct = mapped_passed_pct) %>%
-  left_join(nuc_reads_vs_aa_ref) %>%
-  mutate(orph_nnc_roary_k10_pct_of_nbhd = (orph_nnc_roary_k10_reads/nbhd_reads)*100,
-         orph_nnc_roary_k10_pct_of_nbhd_mapped = (orph_nnc_roary_k10_reads_mapped_aa_ref/nbhd_reads)*100)
+orph_trans_roary_k15 <- read_and_format_orpheum_json_translation(sys_glob_path = "outputs/orpheum/roary_with_megahit_and_isolates/dayhoff_ksize15/*json",
+                                                                 database = "roary",
+                                                                 alphabet = "dayhoff",
+                                                                 ksize = 15)
+
+orph_trans_roary_k17 <- read_and_format_orpheum_json_translation(sys_glob_path = "outputs/orpheum/roary_with_megahit_and_isolates/dayhoff_ksize17/*json",
+                                                                 database = "roary",
+                                                                 alphabet = "dayhoff",
+                                                                 ksize = 17)
+
+orph_trans_ruminococcusB_k6 <- read_and_format_orpheum_json_translation(sys_glob_path = "outputs/orpheum/ruminococcusB/protein_ksize6/*json",
+                                                                        database = "ruminococcusB",
+                                                                        alphabet = "protein",
+                                                                        ksize = 6)
+
+orph_trans_ruminococcusB_k7 <- read_and_format_orpheum_json_translation(sys_glob_path = "outputs/orpheum/ruminococcusB/protein_ksize7/*json",
+                                                                        database = "ruminococcusB",
+                                                                        alphabet = "protein",
+                                                                        ksize = 7)
+
+orph_trans_ruminococcusB_k10 <- read_and_format_orpheum_json_translation(sys_glob_path = "outputs/orpheum/ruminococcusB/protein_ksize10/*json",
+                                                                         database = "ruminococcusB",
+                                                                         alphabet = "protein",
+                                                                         ksize = 10)
+
+orph_trans_f__Lachnospiraceae_k6 <- read_and_format_orpheum_json_translation(sys_glob_path = "outputs/orpheum/f__Lachnospiraceae/protein_ksize6/*json",
+                                                                             database = "f__Lachnospiraceae",
+                                                                             alphabet = "protein",
+                                                                             ksize = 6)
+
+orph_trans_f__Lachnospiraceae_k7 <- read_and_format_orpheum_json_translation(sys_glob_path = "outputs/orpheum/f__Lachnospiraceae/protein_ksize7/*json",
+                                                                             database = "f__Lachnospiraceae",
+                                                                             alphabet = "protein",
+                                                                             ksize = 7)
+
+orph_trans_f__Lachnospiraceae_k10 <- read_and_format_orpheum_json_translation(sys_glob_path = "outputs/orpheum/f__Lachnospiraceae/protein_ksize10/*json",
+                                                                              database = "f__Lachnospiraceae",
+                                                                              alphabet = "protein",
+                                                                              ksize = 10)
+
+orph_trans_p__Firmicutes_A_k7 <- read_and_format_orpheum_json_translation(sys_glob_path = "outputs/orpheum/p__Firmicutes_A/protein_ksize7/*json",
+                                                                          database = "p__Firmicutes_A",
+                                                                          alphabet = "protein",
+                                                                          ksize = 7)
+
+orph_trans_p__Firmicutes_A_k10 <- read_and_format_orpheum_json_translation(sys_glob_path = "outputs/orpheum/p__Firmicutes_A/protein_ksize10/*json",
+                                                                           database = "p__Firmicutes_A",
+                                                                           alphabet = "protein",
+                                                                           ksize = 10)
+
+
 
 ```
-
-```{r combine_multiqc, eval = F}
-all_multiqc <- Reduce(function(...) merge(..., by = c("Sample", "nbhd_reads", "nbhd_reads_mapped_aa_ref", "nbhd_reads_mapped_aa_ref_pct"), all.x=TRUE), 
-       list(orph_aa_plass_k7_vs_aa_ref,
-            orph_aa_plass_k10_vs_aa_ref,
-            orph_nnc_plass_k7_vs_aa_ref,
-            orph_nnc_plass_k10_vs_aa_ref, 
-            orph_aa_roary_k7_vs_aa_ref,
-            orph_aa_roary_k10_vs_aa_ref, 
-            orph_nnc_roary_k7_vs_aa_ref,
-            orph_nnc_roary_k10_vs_aa_ref))
-```
-
 ## Controls
 
 ```{r nbhd_reads}
