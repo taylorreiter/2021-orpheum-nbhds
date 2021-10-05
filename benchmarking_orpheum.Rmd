@@ -54,6 +54,7 @@ read_and_format_orpheum_json <- function(sys_glob_path, database, alphabet, ksiz
   return(json_df)
 }
 
+sys_glob_path = "outputs/orpheum/roary_with_megahit_and_isolates/protein_ksize7/*json"
 read_and_format_orpheum_json_translation <- function(sys_glob_path, database, alphabet, ksize) {
   file_prefix = paste0("outputs\\/orpheum\\/", database, "\\/", alphabet, "_ksize", ksize, "\\/")
   json_df <- Sys.glob(sys_glob_path) %>%
@@ -68,9 +69,18 @@ read_and_format_orpheum_json_translation <- function(sys_glob_path, database, al
   
   # make sure numbers are encoded as numeric, then replace NAs with 0s and sum to coding
   json_df <- json_df %>%
-    #mutate_at(vars(starts_with("number_of_reads_with")), funs(as.numeric(as.character((.))))) %>%
     mutate(across(where(~ anyNA(.) & is.numeric(.)), ~ replace_na(., 0))) %>%
     mutate(coding_reads = rowSums(across(where(is.numeric))))
+  
+  # add missing cols
+  columns <- c(number_of_reads_with_1_putative_protein_coding_translations = 0,
+               number_of_reads_with_2_putative_protein_coding_translations = 0,
+               number_of_reads_with_3_putative_protein_coding_translations = 0,
+               number_of_reads_with_4_putative_protein_coding_translations = 0,
+               number_of_reads_with_5_putative_protein_coding_translations = 0,
+               number_of_reads_with_6_putative_protein_coding_translations = 0)
+  json_df <- json_df %>%
+    add_column(!!!columns[!names(columns) %in% names(.)])
   
   # calculate percentage of reads translated into n number of coding frames
   json_df <- json_df %>%
@@ -102,7 +112,7 @@ plot_orpheum_translation_frames <- function(orpheum_trans, ksize, alphabet, data
   ggplot(orpheum_trans_long, aes(x = translation_frame, y = fraction)) +
     geom_violin(scale = "width") +
     theme_minimal() +
-    labs(x = "number ofcoding frames per read", y = "fraction of putative coding reads",
+    labs(x = "number of coding frames per read", y = "fraction of putative coding reads",
          title = paste0("db = ", database, ", alphabet = ", alphabet, ", k = ", ksize))
 }
 ```
@@ -188,35 +198,29 @@ plot_flagstat_nc <- function(flagstat_path, ksize, alphabet, database){
   return(plt)
 }
 
-# orpheum_json = orph_plass_k10
-# flagstat_path = "outputs/nuc_noncoding_bwa/plass_assembly/protein_ksize10/multiqc_data/multiqc_samtools_flagstat.txt"
-# ksize = 10
-# database = "plass_assembly" 
-# alphabet = "protein"
+plot_predicted_nnc_vs_flagstat_nnc <- function(orpheum_json, flagstat_path, ksize, alphabet, database, noncoding_estimate){
 
-plot_predicted_nnc_vs_flagstat_nnc <- function(orpheum_json, flagstat_path, ksize, alphabet, database){
   orph_nnc_vs_reference <- read_tsv(flagstat_path) %>%
     replace_na(list(mapped_passed_pct = 0)) %>%
     mutate(Sample = gsub("_GCF_900036035\\.1_RGNV35913_genomic\\.fna", "", Sample)) %>%
     left_join(orpheum_json, by = c("Sample" = "sample"))
   
-  # label graph with mean 
-  mean_mapped_passed_pct <- orph_nnc_vs_reference %>% 
-    pull(mapped_passed_pct) %>% 
-    mean() %>%
-    signif(3)
-  
   plt <- ggplot(orph_nnc_vs_reference, aes(x = (non_coding/nbhd_reads)*100, y = mapped_passed_pct)) +
-    geom_point(alpha = 0.5) +
+    #geom_rect(aes(xmin = 3, xmax = 60, ymin=0, ymax=Inf), color = "#2C77BF", fill = alpha("#2C77BF", .1)) + 
+    annotate(geom = "rect", xmin = 3, xmax = 60, ymin=0, ymax=Inf, fill = "#2C77BF", alpha = 0.2) +
+    geom_vline(aes(xintercept = noncoding_estimate), color = "#2C77BF") +
+    geom_point(alpha = 0.1) +
     ggplot_base +
     labs(title = paste0("db = ", database, ", alphabet = ", alphabet, ", k = ", ksize), 
-         x = "% putative non coding reads",
-         y = "% putative non coding reads mapped to reference") +
+         x = "putative non coding reads\n(% of total library)",
+         y = "putative non coding reads mapped to reference\n(% of putative non coding reads)") +
     geom_hline(aes(yintercept = mean(mapped_passed_pct)), col='grey', linetype = "dashed") +
     geom_vline(aes(xintercept = mean((non_coding/nbhd_reads)*100)),  col='grey', linetype = "dashed")
-  plt
+    
+
   return(plt)
 }
+
 ```
 
 ```{r function_plot_stat}
@@ -252,6 +256,44 @@ plot_stat_nnc <- function(sys_glob_stat, ksize, alphabet, database){
     #geom_text(aes(x= mean_error_rate/2, label=paste0("Mean\n", mean_error_rate), y=50))
     geom_text(aes(label=paste0("mean = ", mean_error_rate), y=Inf, x= mean_error_rate/2), size = 4, vjust = 1)
 
+}
+```
+
+```{r function_figure_panels}
+all_old_plots <- function(flagstat_path_aa, flagstat_path_nnc, flagstat_path_nc,
+                          sys_glob_stat_nnc, sys_glob_stat_nc,
+                          ksize, nbhd_reads, database, alaphabet){
+  aa_paladin_vs_ref <- plot_flagstat_aa(flagstat_path = flagstat_path_aa, 
+                                        ksize = ksize, 
+                                        nbhd_reads = nbhd_reads, 
+                                        database = database, 
+                                        alphabet = alphabet) 
+  
+  nnc_bwa_vs_ref <- plot_flagstat_nnc(flagstat_path = flagstat_path_nnc, 
+                                      ksize = ksize,
+                                      database = database, 
+                                      alphabet = alphabet)
+  
+  
+  nc_bwa_vs_ref <- plot_flagstat_nc(flagstat_path = flagstat_path_nc, 
+                                    ksize = ksize, 
+                                    database = database, 
+                                    alphabet = alphabet)
+  
+  nnc_bwa_vs_ref_stat <- plot_stat_nnc(sys_glob_stat = sys_glob_stat_nnc,
+                                       ksize = ksize, 
+                                       database = database, 
+                                       alphabet = alphabet)
+  
+  nc_bwa_vs_ref_stat <- plot_stat_nnc(sys_glob_stat = sys_glob_stat_nc,
+                                     ksize = ksize, 
+                                     database = database, 
+                                     alphabet = alphabet)
+  
+  ggarrange(aa_paladin_vs_ref, 
+            ggarrange(nc_bwa_vs_ref, nnc_bwa_vs_ref, 
+                      nc_bwa_vs_ref_stat, nnc_bwa_vs_ref_stat, ncol = 2, nrow = 2), 
+            nrow = 2, heights = c(1, 2))
 }
 ```
 
@@ -296,37 +338,37 @@ orph_plass_k17 <- read_and_format_orpheum_json(sys_glob_path = "outputs/orpheum/
                                                ksize = 17)
 
 orph_roary_k6 <- read_and_format_orpheum_json(sys_glob_path = "outputs/orpheum/roary_with_megahit_and_isolates/protein_ksize6/*json",
-                                              database = "roary",
+                                              database = "roary_with_megahit_and_isolates",
                                               alphabet = "protein",
                                               ksize = 6)
 
 orph_roary_k7 <- read_and_format_orpheum_json(sys_glob_path = "outputs/orpheum/roary_with_megahit_and_isolates/protein_ksize7/*json",
-                                              database = "roary",
+                                              database = "roary_with_megahit_and_isolates",
                                               alphabet = "protein",
                                               ksize = 7)
 
 orph_roary_k10 <- read_and_format_orpheum_json(sys_glob_path = "outputs/orpheum/roary_with_megahit_and_isolates/protein_ksize10/*json",
-                                               database = "roary",
+                                               database = "roary_with_megahit_and_isolates",
                                                alphabet = "protein",
                                                ksize = 10)
 
 orph_roary_k11 <- read_and_format_orpheum_json(sys_glob_path = "outputs/orpheum/roary_with_megahit_and_isolates/dayhoff_ksize11/*json",
-                                               database = "roary",
+                                               database = "roary_with_megahit_and_isolates",
                                                alphabet = "dayhoff",
                                                ksize = 11)
 
 orph_roary_k13 <- read_and_format_orpheum_json(sys_glob_path = "outputs/orpheum/roary_with_megahit_and_isolates/dayhoff_ksize13/*json",
-                                               database = "roary",
+                                               database = "roary_with_megahit_and_isolates",
                                                alphabet = "dayhoff",
                                                ksize = 13)
 
 orph_roary_k15 <- read_and_format_orpheum_json(sys_glob_path = "outputs/orpheum/roary_with_megahit_and_isolates/dayhoff_ksize15/*json",
-                                               database = "roary",
+                                               database = "roary_with_megahit_and_isolates",
                                                alphabet = "dayhoff",
                                                ksize = 15)
 
 orph_roary_k17 <- read_and_format_orpheum_json(sys_glob_path = "outputs/orpheum/roary_with_megahit_and_isolates/dayhoff_ksize17/*json",
-                                               database = "roary",
+                                               database = "roary_with_megahit_and_isolates",
                                                alphabet = "dayhoff",
                                                ksize = 17)
 
@@ -705,6 +747,28 @@ ggarrange(nc_bwa_roary_k6_stat, nc_bwa_roary_k7_stat, nc_bwa_roary_k10_stat,
           nc_bwa_roary_k17_stat, ncol = 2, nrow = 4)
 ```
 
+```{r old_panel_of_figures}
+all_old_plots(flagstat_path_aa = "outputs/aa_paladin/roary_with_megahit_and_isolates/protein_ksize7/multiqc_data/multiqc_samtools_flagstat.txt", 
+              flagstat_path_nnc ="outputs/nuc_noncoding_bwa/roary_with_megahit_and_isolates/protein_ksize7/multiqc_data/multiqc_samtools_flagstat.txt", 
+              flagstat_path_nc = "outputs/nuc_coding_bwa/roary_with_megahit_and_isolates/protein_ksize7/multiqc_data/multiqc_samtools_flagstat.txt",
+              sys_glob_stat_nnc = "outputs/nuc_noncoding_bwa/roary_with_megahit_and_isolates/protein_ksize7/*.stat", 
+              sys_glob_stat_nc = "outputs/nuc_coding_bwa/roary_with_megahit_and_isolates/protein_ksize7/*.stat",
+              ksize = 7, nbhd_reads = nbhd_reads, 
+              database = "roary", alaphabet = "protein")
+```
+
+```{r try_new_figure_panels}
+tmp1 <- plot_orpheum_translation_frames(orpheum_trans = orph_trans_roary_k7, ksize = 7, 
+                                alphabet = "protein", database = "roary")
+
+tmp2 <- plot_predicted_nnc_vs_flagstat_nnc(orpheum_json = orph_roary_k7, 
+                                   flagstat_path = "outputs/nuc_noncoding_bwa/roary_with_megahit_and_isolates/protein_ksize7/multiqc_data/multiqc_samtools_flagstat.txt", 
+                                   ksize = 7, alphabet = "protein",
+                                   database = "roary_with_megahit_and_isolates",
+                                   noncoding_estimate = 10.2)
+
+ggarrange(tmp1, tmp2, ncol = 2)
+```
 
 ## Experimental DB3: GTDB ruminococcusB
 
