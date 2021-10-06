@@ -221,6 +221,36 @@ plot_predicted_nnc_vs_flagstat_nnc <- function(orpheum_json, flagstat_path, ksiz
   return(plt)
 }
 
+plot_predicted_nnc_and_flagstat_nnc <- function(orpheum_json, flagstat_path, ksize, alphabet, database, noncoding_estimate){
+
+  orph_nnc_vs_reference <- read_tsv(flagstat_path) %>%
+    replace_na(list(mapped_passed_pct = 0)) %>%
+    mutate(Sample = gsub("_GCF_900036035\\.1_RGNV35913_genomic\\.fna", "", Sample)) %>%
+    left_join(orpheum_json, by = c("Sample" = "sample")) %>%
+    mutate(non_coding_pct = (non_coding/nbhd_reads)*100)
+  
+  # format for geom_col
+  tmp <- orph_nnc_vs_reference %>%
+    select(Sample, non_coding_pct, mapped_passed_pct) %>%
+    mutate(non_coding_mapped_pct = non_coding_pct * (mapped_passed_pct/100)) %>%
+    mutate(non_coding_unmapped_pct = non_coding_pct - non_coding_mapped_pct)  %>%
+    select(-mapped_passed_pct) %>%
+    pivot_longer(cols = ends_with("mapped_pct"), names_to = "fraction", values_to = "percent")
+  
+  plt <- ggplot(tmp, aes(x = reorder(Sample, non_coding_pct), y = percent,
+                                           fill = fraction)) +
+    geom_col() +
+    geom_hline(aes(yintercept = noncoding_estimate), color = "black", linetype = "dashed", ) +
+    ggplot_base +
+    theme(axis.text.x = element_blank(),
+          legend.position = "bottom") +
+    labs(title = paste0("db = ", database, ", alphabet = ", alphabet, ", k = ", ksize), 
+         y = "putative non coding reads\n(% of total library)",
+         x = "genome query neighborhood", fill = "mapped to\nnucleotide CDS") +
+    scale_fill_discrete(labels = c("mapped\n(false negative)", "unmapped"))
+    
+  return(plt)
+}
 ```
 
 ```{r function_plot_stat}
